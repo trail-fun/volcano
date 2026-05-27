@@ -1,9 +1,10 @@
 import { useRef, useState, useEffect } from 'react'
 import { useRaceStore } from '../../store/raceStore'
 import { useModeStore } from '../../store/modeStore'
+import { useDrawingStore } from '../../store/drawingStore'
 import { parseGpx } from '../../utils/gpxParser'
-import { snapToRoute } from '../../utils/geo'
-import type { PointType, Route, Terrain, Segment } from '../../types/race'
+import { snapToRoute, fetchElevation } from '../../utils/geo'
+import type { PointType, Route, Terrain, Segment, LatLngEle } from '../../types/race'
 import { POINT_ICONS } from '../map/mapStyles'
 
 const POINT_LABELS: Record<PointType, string> = {
@@ -15,6 +16,7 @@ type Props = { pendingLatLng: { lat: number; lng: number } | null; clearPending:
 export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const { race, routes, points, setRace, exportToZip, addPoint, updatePoint, deletePoint, addRoute, updateRoute } = useRaceStore()
   const { activeTool, setActiveTool } = useModeStore()
+  const { routeType: drawingRouteType, points: drawingPoints, startDrawing, removeLastPoint, clearDrawing } = useDrawingStore()
   const escGpxRef = useRef<HTMLInputElement>(null)
   const roadGpxRef = useRef<HTMLInputElement>(null)
 
@@ -25,6 +27,45 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [terrainStep, setTerrainStep] = useState<'start' | 'end' | null>(null)
   const terrainStartIdxRef = useRef<number | null>(null)
   const [terrainDialogIndices, setTerrainDialogIndices] = useState<{ si: number; ei: number } | null>(null)
+
+  // 手描きツール
+  const [drawingName, setDrawingName] = useState('')
+  const [fetchingEle, setFetchingEle] = useState(false)
+
+  const startDrawingRoute = (type: 'escape' | 'road_access') => {
+    startDrawing(type)
+    setDrawingName(type === 'escape' ? 'エスケープルート' : '車道ルート')
+    setActiveTool('draw_route')
+  }
+
+  const cancelDrawing = () => {
+    clearDrawing()
+    setDrawingName('')
+    setActiveTool('none')
+  }
+
+  const finishDrawing = async () => {
+    if (!drawingRouteType || drawingPoints.length < 2) return
+    setFetchingEle(true)
+    const elevations = await Promise.all(drawingPoints.map(p => fetchElevation(p.lat, p.lng)))
+    const coords: LatLngEle[] = drawingPoints.map((p, i) => ({ ...p, ele: elevations[i] }))
+    const route: Route = {
+      id: crypto.randomUUID(),
+      name: drawingName || (drawingRouteType === 'escape' ? 'エスケープルート' : '車道ルート'),
+      type: drawingRouteType,
+      gpxFile: `${crypto.randomUUID()}.gpx`,
+      coords,
+      difficulty: drawingRouteType === 'escape' ? 'medium' : 'low',
+      transportSuitability: ['walk'],
+      segments: [],
+      junction: null,
+    }
+    addRoute(route)
+    setFetchingEle(false)
+    clearDrawing()
+    setDrawingName('')
+    setActiveTool('none')
+  }
 
   // ポイント追加ダイアログ（地図クリック後）
   if (pendingLatLng && !newPoint && activeTool === 'add_point') {
@@ -140,16 +181,65 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
             </span>
           </div>
         ))}
-        <div className="flex gap-1 mt-1 flex-wrap">
-          <button onClick={() => escGpxRef.current?.click()}
-            className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded transition">
-            ＋ エスケープ追加
-          </button>
-          <button onClick={() => roadGpxRef.current?.click()}
-            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded transition">
-            ＋ 車道ルート
-          </button>
-        </div>
+
+        {/* 手描き中UI */}
+        {drawingRouteType && (
+          <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-2 flex flex-col gap-1.5">
+            <div className="text-xs font-semibold text-blue-700">
+              ✏️ {drawingRouteType === 'escape' ? 'エスケープ' : '車道'}を手描き中
+            </div>
+            <input
+              className="border rounded px-2 py-1 text-xs"
+              placeholder="ルート名"
+              value={drawingName}
+              onChange={e => setDrawingName(e.target.value)}
+            />
+            <div className="text-xs text-gray-500">
+              {drawingPoints.length} ポイント — 地図をタップして追加
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              <button
+                onClick={removeLastPoint}
+                disabled={drawingPoints.length === 0}
+                className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-40"
+              >↩ 1点戻す</button>
+              <button
+                onClick={finishDrawing}
+                disabled={drawingPoints.length < 2 || fetchingEle}
+                className="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40"
+              >{fetchingEle ? '高度取得中…' : '✅ 完了'}</button>
+              <button
+                onClick={cancelDrawing}
+                className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
+              >✖ キャンセル</button>
+            </div>
+          </div>
+        )}
+
+        {!drawingRouteType && (
+          <div className="mt-1 flex flex-col gap-1">
+            <div className="flex gap-1">
+              <button onClick={() => escGpxRef.current?.click()}
+                className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded transition flex-1">
+                📂 エスケープ(GPX)
+              </button>
+              <button onClick={() => startDrawingRoute('escape')}
+                className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded transition flex-1">
+                ✏️ エスケープ(手描き)
+              </button>
+            </div>
+            <div className="flex gap-1">
+              <button onClick={() => roadGpxRef.current?.click()}
+                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded transition flex-1">
+                📂 車道(GPX)
+              </button>
+              <button onClick={() => startDrawingRoute('road_access')}
+                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded transition flex-1">
+                ✏️ 車道(手描き)
+              </button>
+            </div>
+          </div>
+        )}
         <input ref={escGpxRef} type="file" accept=".gpx,application/octet-stream,application/xml" className="hidden" onChange={handleEscGpx} />
         <input ref={roadGpxRef} type="file" accept=".gpx,application/octet-stream,application/xml" className="hidden" onChange={handleRoadGpx} />
       </section>

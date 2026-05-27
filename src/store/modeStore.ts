@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export type Mode = 'edit' | 'operation'
-export type EditTool = 'none' | 'add_point' | 'set_segment' | 'set_junction' | 'draw_road_access'
+export type EditTool = 'none' | 'add_point' | 'set_segment' | 'set_junction' | 'draw_road_access' | 'draw_route'
 
 type ModeStore = {
   mode: Mode

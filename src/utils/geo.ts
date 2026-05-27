@@ -49,6 +49,18 @@ export function snapToRoute(p: LatLng, coords: LatLng[]): { segmentIndex: number
   return best
 }
 
+export async function fetchElevation(lat: number, lng: number): Promise<number> {
+  try {
+    const res = await fetch(
+      `https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php?lon=${lng}&lat=${lat}&outtype=JSON`
+    )
+    const data = await res.json()
+    return typeof data.elevation === 'number' ? data.elevation : 0
+  } catch {
+    return 0
+  }
+}
+
 export function interpolateEle(coords: LatLngEle[], segIdx: number, ratio: number): number {
   const a = coords[segIdx], b = coords[segIdx + 1] ?? a
   return a.ele + ratio * (b.ele - a.ele)

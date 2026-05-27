@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import { useRaceStore } from '../../store/raceStore'
 import { useModeStore } from '../../store/modeStore'
 import { useCasualtyStore } from '../../store/casualtyStore'
+import { useDrawingStore } from '../../store/drawingStore'
 import { calcCandidates } from '../../hooks/useRouteCalc'
 import { POINT_ICONS, ROUTE_STYLES, TERRAIN_STYLES, CANDIDATE_COLORS } from './mapStyles'
 import type { Segment, LatLngEle } from '../../types/race'
@@ -58,6 +59,8 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
   const { routes, points } = useRaceStore()
   const { mode, activeTool } = useModeStore()
   const { position, selectedCandidateId, setPosition, candidates } = useCasualtyStore()
+  const { routeType: drawingRouteType, points: drawingPoints, addPoint: addDrawingPoint } = useDrawingStore()
+  const drawingLayersRef = useRef<L.Layer[]>([])
 
   // 地図初期化
   useEffect(() => {
@@ -79,6 +82,8 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         setPosition({ lat, lng }, newCandidates)
       } else if (activeTool === 'add_point' || activeTool === 'set_segment') {
         onMapClick?.(e.latlng.lat, e.latlng.lng)
+      } else if (activeTool === 'draw_route') {
+        addDrawingPoint({ lat: e.latlng.lat, lng: e.latlng.lng })
       }
     }
     map.on('click', handler)
@@ -190,6 +195,30 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
       }
     }
   }, [candidates, selectedCandidateId, routes, position])
+
+  // 手描きプレビュー
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    drawingLayersRef.current.forEach(l => l.remove())
+    drawingLayersRef.current = []
+    if (drawingPoints.length === 0) return
+    const color = drawingRouteType === 'escape' ? '#2563eb' : '#6b7280'
+    if (drawingPoints.length >= 2) {
+      const line = L.polyline(drawingPoints.map(p => [p.lat, p.lng] as [number, number]), {
+        color, weight: 3, opacity: 0.8, dashArray: '8,5',
+      }).addTo(map)
+      drawingLayersRef.current.push(line)
+    }
+    drawingPoints.forEach((p, i) => {
+      const isLast = i === drawingPoints.length - 1
+      const m = L.circleMarker([p.lat, p.lng], {
+        radius: isLast ? 7 : 4, color, fillColor: isLast ? color : '#fff',
+        fillOpacity: 1, weight: 2,
+      }).addTo(map)
+      drawingLayersRef.current.push(m)
+    })
+  }, [drawingPoints, drawingRouteType])
 
   return <div ref={containerRef} style={{ position: 'absolute', inset: 0, zIndex: 0 }} />
 }
