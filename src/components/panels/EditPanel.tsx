@@ -135,13 +135,15 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
     updateRoute(mainRoute.id, { segments: allSegs })
 
     // トレイル/ロード境界に自動で下山口ポイントを作成
+    // segMap[i] = terrain of edge coords[i]→coords[i+1]; boundary point is coords[i] when segMap[i] != segMap[i-1]
     const coords = mainRoute.coords
-    const tmap: Terrain[] = new Array(coords.length).fill('trail')
+    const n = coords.length - 1
+    const segMap: Terrain[] = new Array(n).fill('trail')
     for (const s of allSegs) {
-      for (let i = s.startIndex; i <= Math.min(s.endIndex, coords.length - 1); i++) tmap[i] = s.terrain
+      for (let i = s.startIndex; i < Math.min(s.endIndex, n); i++) segMap[i] = s.terrain
     }
-    for (let i = 1; i < tmap.length; i++) {
-      if (tmap[i] !== tmap[i - 1]) {
+    for (let i = 1; i < n; i++) {
+      if (segMap[i] !== segMap[i - 1]) {
         const coord = coords[i]
         const nearby = points.some(p =>
           (p.type === 'exit' || p.type === 'helipad') &&

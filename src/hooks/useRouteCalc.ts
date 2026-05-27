@@ -9,7 +9,8 @@ function hasRoadSection(routes: Route[], segs: CandidateSegment[]): boolean {
     const lo = Math.min(seg.fromIndex, seg.toIndex)
     const hi = Math.max(seg.fromIndex, seg.toIndex)
     for (const ts of route.segments) {
-      if (ts.terrain === 'road' && ts.startIndex <= hi && ts.endIndex >= lo) return true
+      // candidate covers edges lo..hi-1; road segment covers edges startIndex..endIndex-1
+      if (ts.terrain === 'road' && ts.startIndex < hi && ts.endIndex > lo) return true
     }
   }
   return false

@@ -10,20 +10,33 @@ import { POINT_ICONS, ROUTE_STYLES, TERRAIN_STYLES, CANDIDATE_COLORS } from './m
 import { snapToRoute } from '../../utils/geo'
 import type { Segment, LatLngEle } from '../../types/race'
 
+// segMap[i] = terrain of edge coords[i]→coords[i+1]
+// seg.startIndex/endIndex are coord indices: road spans coords[start]→coords[end]
+// so edges start..(end-1) are road
+function buildSegMap(coords: LatLngEle[], segments: Segment[]): ('trail' | 'road')[] {
+  const n = coords.length - 1
+  const segMap: ('trail' | 'road')[] = new Array(n).fill('trail')
+  for (const seg of segments) {
+    for (let i = seg.startIndex; i < Math.min(seg.endIndex, n); i++) segMap[i] = seg.terrain
+  }
+  return segMap
+}
+
 // コースを terrain 種別ごとのランに分割
 function getTerrainRuns(coords: LatLngEle[], segments: Segment[]) {
+  if (coords.length < 2) return [{ terrain: 'trail' as const, coords }]
   if (segments.length === 0) return [{ terrain: 'trail' as const, coords }]
-  const map: ('trail' | 'road')[] = new Array(coords.length).fill('trail')
-  for (const seg of segments) {
-    for (let i = seg.startIndex; i <= Math.min(seg.endIndex, coords.length - 1); i++) map[i] = seg.terrain
-  }
+  const segMap = buildSegMap(coords, segments)
+  const n = segMap.length
   const runs: { terrain: 'trail' | 'road'; coords: LatLngEle[] }[] = []
-  let cur = map[0], curCoords: LatLngEle[] = [coords[0]]
-  for (let i = 1; i < coords.length; i++) {
-    if (map[i] === cur) { curCoords.push(coords[i]) }
-    else { runs.push({ terrain: cur, coords: curCoords }); cur = map[i]; curCoords = [coords[i - 1], coords[i]] }
+  let cur = segMap[0], runStart = 0
+  for (let i = 1; i < n; i++) {
+    if (segMap[i] !== cur) {
+      runs.push({ terrain: cur, coords: coords.slice(runStart, i + 1) })
+      cur = segMap[i]; runStart = i
+    }
   }
-  runs.push({ terrain: cur, coords: curCoords })
+  runs.push({ terrain: cur, coords: coords.slice(runStart) })
   return runs
 }
 
@@ -33,15 +46,17 @@ function getTrailSlices(coords: LatLngEle[], segments: Segment[], lo: number, hi
     const s = coords.slice(lo, hi + 1)
     return s.length >= 2 ? [s] : []
   }
-  const map: ('trail' | 'road')[] = new Array(coords.length).fill('trail')
-  for (const seg of segments) {
-    for (let i = seg.startIndex; i <= Math.min(seg.endIndex, coords.length - 1); i++) map[i] = seg.terrain
-  }
+  const segMap = buildSegMap(coords, segments)
   const result: LatLngEle[][] = []
   let cur: LatLngEle[] = []
-  for (let i = lo; i <= hi; i++) {
-    if (map[i] === 'trail') { cur.push(coords[i]) }
-    else { if (cur.length >= 2) result.push([...cur]); cur = [] }
+  for (let i = lo; i < hi; i++) {  // iterate edges lo..hi-1
+    if (segMap[i] === 'trail') {
+      if (cur.length === 0) cur.push(coords[i])
+      cur.push(coords[i + 1])
+    } else {
+      if (cur.length >= 2) result.push([...cur])
+      cur = []
+    }
   }
   if (cur.length >= 2) result.push(cur)
   return result
