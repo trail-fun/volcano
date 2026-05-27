@@ -9,6 +9,11 @@ export const POINT_ICONS: Record<PointType, string> = {
   custom: '📍',
 }
 
+export const TERRAIN_STYLES: Record<'trail' | 'road', L.PolylineOptions> = {
+  trail: { color: '#16a34a', weight: 4, opacity: 0.85 },
+  road:  { color: '#f59e0b', weight: 4, opacity: 0.9, dashArray: '10,4' },
+}
+
 export const CANDIDATE_COLORS = [
   '#f97316', // orange
   '#8b5cf6', // violet

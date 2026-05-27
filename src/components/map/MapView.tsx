@@ -5,7 +5,45 @@ import { useRaceStore } from '../../store/raceStore'
 import { useModeStore } from '../../store/modeStore'
 import { useCasualtyStore } from '../../store/casualtyStore'
 import { calcCandidates } from '../../hooks/useRouteCalc'
-import { POINT_ICONS, ROUTE_STYLES, CANDIDATE_COLORS } from './mapStyles'
+import { POINT_ICONS, ROUTE_STYLES, TERRAIN_STYLES, CANDIDATE_COLORS } from './mapStyles'
+import type { Segment, LatLngEle } from '../../types/race'
+
+// コースを terrain 種別ごとのランに分割
+function getTerrainRuns(coords: LatLngEle[], segments: Segment[]) {
+  if (segments.length === 0) return [{ terrain: 'trail' as const, coords }]
+  const map: ('trail' | 'road')[] = new Array(coords.length).fill('trail')
+  for (const seg of segments) {
+    for (let i = seg.startIndex; i <= Math.min(seg.endIndex, coords.length - 1); i++) map[i] = seg.terrain
+  }
+  const runs: { terrain: 'trail' | 'road'; coords: LatLngEle[] }[] = []
+  let cur = map[0], curCoords: LatLngEle[] = [coords[0]]
+  for (let i = 1; i < coords.length; i++) {
+    if (map[i] === cur) { curCoords.push(coords[i]) }
+    else { runs.push({ terrain: cur, coords: curCoords }); cur = map[i]; curCoords = [coords[i - 1], coords[i]] }
+  }
+  runs.push({ terrain: cur, coords: curCoords })
+  return runs
+}
+
+// 候補範囲内のトレイル区間のみ座標配列として返す
+function getTrailSlices(coords: LatLngEle[], segments: Segment[], lo: number, hi: number): LatLngEle[][] {
+  if (segments.length === 0) {
+    const s = coords.slice(lo, hi + 1)
+    return s.length >= 2 ? [s] : []
+  }
+  const map: ('trail' | 'road')[] = new Array(coords.length).fill('trail')
+  for (const seg of segments) {
+    for (let i = seg.startIndex; i <= Math.min(seg.endIndex, coords.length - 1); i++) map[i] = seg.terrain
+  }
+  const result: LatLngEle[][] = []
+  let cur: LatLngEle[] = []
+  for (let i = lo; i <= hi; i++) {
+    if (map[i] === 'trail') { cur.push(coords[i]) }
+    else { if (cur.length >= 2) result.push([...cur]); cur = [] }
+  }
+  if (cur.length >= 2) result.push(cur)
+  return result
+}
 
 const GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'
 
@@ -39,7 +77,7 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         const { lat, lng } = e.latlng
         const newCandidates = calcCandidates({ lat, lng }, routes, points)
         setPosition({ lat, lng }, newCandidates)
-      } else if (activeTool === 'add_point') {
+      } else if (activeTool === 'add_point' || activeTool === 'set_segment') {
         onMapClick?.(e.latlng.lat, e.latlng.lng)
       }
     }
@@ -68,18 +106,28 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
 
     for (const route of routes) {
       if (route.coords.length < 2) continue
-      const latlngs = route.coords.map(c => [c.lat, c.lng] as [number, number])
-      const style = ROUTE_STYLES[route.type]
-      const line = L.polyline(latlngs, style).addTo(map)
-      line.bindTooltip(route.name, { sticky: true })
-      layersRef.current.push(line)
 
-      if (route.junction) {
-        const m = L.circleMarker([route.junction.lat, route.junction.lng], {
-          radius: 6, color: '#f59e0b', fillColor: '#fbbf24', fillOpacity: 1, weight: 2,
-        }).addTo(map)
-        m.bindTooltip(`分岐: ${route.name}`)
-        layersRef.current.push(m)
+      if (route.type === 'course') {
+        // トレイル/ロードで色分け
+        for (const run of getTerrainRuns(route.coords, route.segments)) {
+          const line = L.polyline(run.coords.map(c => [c.lat, c.lng] as [number, number]), TERRAIN_STYLES[run.terrain]).addTo(map)
+          line.bindTooltip(`${route.name}（${run.terrain === 'trail' ? 'トレイル' : 'ロード'}）`, { sticky: true })
+          layersRef.current.push(line)
+        }
+      } else {
+        const latlngs = route.coords.map(c => [c.lat, c.lng] as [number, number])
+        const style = ROUTE_STYLES[route.type]
+        const line = L.polyline(latlngs, style).addTo(map)
+        line.bindTooltip(route.name, { sticky: true })
+        layersRef.current.push(line)
+
+        if (route.junction) {
+          const m = L.circleMarker([route.junction.lat, route.junction.lng], {
+            radius: 6, color: '#f59e0b', fillColor: '#fbbf24', fillOpacity: 1, weight: 2,
+          }).addTo(map)
+          m.bindTooltip(`分岐: ${route.name}`)
+          layersRef.current.push(m)
+        }
       }
     }
 
@@ -129,14 +177,16 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
       for (const seg of c.segments) {
         const route = routes.find(r => r.id === seg.routeId)
         if (!route) continue
-        const from = Math.min(seg.fromIndex, seg.toIndex)
-        const to = Math.max(seg.fromIndex, seg.toIndex)
-        const slice = route.coords.slice(from, to + 2)
-        const coords = seg.direction === 'backward' ? [...slice].reverse() : slice
-        const line = L.polyline(coords.map(c => [c.lat, c.lng] as [number, number]), {
-          color, weight: isSelected ? 7 : 4, opacity: isSelected ? 1.0 : 0.55,
-        }).addTo(map)
-        candidateLayersRef.current.push(line)
+        const lo = Math.min(seg.fromIndex, seg.toIndex)
+        const hi = Math.max(seg.fromIndex, seg.toIndex)
+        // トレイル区間のみ表示
+        const slices = getTrailSlices(route.coords, route.segments, lo, hi)
+        for (const slice of slices) {
+          const line = L.polyline(slice.map(c => [c.lat, c.lng] as [number, number]), {
+            color, weight: isSelected ? 7 : 4, opacity: isSelected ? 1.0 : 0.55,
+          }).addTo(map)
+          candidateLayersRef.current.push(line)
+        }
       }
     }
   }, [candidates, selectedCandidateId, routes, position])

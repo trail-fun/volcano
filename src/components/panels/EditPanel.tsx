@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useRaceStore } from '../../store/raceStore'
 import { useModeStore } from '../../store/modeStore'
 import { parseGpx } from '../../utils/gpxParser'
-import type { PointType, Route } from '../../types/race'
+import { snapToRoute } from '../../utils/geo'
+import type { PointType, Route, Terrain, Segment } from '../../types/race'
 import { POINT_ICONS } from '../map/mapStyles'
 
 const POINT_LABELS: Record<PointType, string> = {
@@ -12,7 +13,7 @@ const POINT_LABELS: Record<PointType, string> = {
 type Props = { pendingLatLng: { lat: number; lng: number } | null; clearPending: () => void }
 
 export default function EditPanel({ pendingLatLng, clearPending }: Props) {
-  const { race, routes, points, setRace, exportToZip, addPoint, updatePoint, deletePoint, addRoute } = useRaceStore()
+  const { race, routes, points, setRace, exportToZip, addPoint, updatePoint, deletePoint, addRoute, updateRoute } = useRaceStore()
   const { activeTool, setActiveTool } = useModeStore()
   const escGpxRef = useRef<HTMLInputElement>(null)
   const roadGpxRef = useRef<HTMLInputElement>(null)
@@ -20,9 +21,54 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [newPoint, setNewPoint] = useState<{ type: PointType; name: string; note: string } | null>(null)
   const [editPointId, setEditPointId] = useState<string | null>(null)
 
+  // 区間設定ツール
+  const [terrainStep, setTerrainStep] = useState<'start' | 'end' | null>(null)
+  const terrainStartIdxRef = useRef<number | null>(null)
+  const [terrainDialogIndices, setTerrainDialogIndices] = useState<{ si: number; ei: number } | null>(null)
+
   // ポイント追加ダイアログ（地図クリック後）
-  if (pendingLatLng && !newPoint) {
+  if (pendingLatLng && !newPoint && activeTool === 'add_point') {
     setNewPoint({ type: 'exit', name: '', note: '' })
+  }
+
+  // 区間設定（地図クリック後）
+  useEffect(() => {
+    if (!pendingLatLng || activeTool !== 'set_segment') return
+    const mainRoute = routes.find(r => r.type === 'course')
+    if (!mainRoute) { clearPending(); return }
+    const snap = snapToRoute(pendingLatLng, mainRoute.coords)
+    if (!snap) { clearPending(); return }
+    if (terrainStep === 'start') {
+      terrainStartIdxRef.current = snap.segmentIndex
+      setTerrainStep('end')
+      clearPending()
+    } else if (terrainStep === 'end') {
+      const si = Math.min(terrainStartIdxRef.current!, snap.segmentIndex)
+      const ei = Math.max(terrainStartIdxRef.current!, snap.segmentIndex)
+      setTerrainDialogIndices({ si, ei })
+      setTerrainStep(null)
+      terrainStartIdxRef.current = null
+      clearPending()
+      setActiveTool('none')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLatLng])
+
+  const saveTerrainSegment = (terrain: Terrain) => {
+    const mainRoute = routes.find(r => r.type === 'course')
+    if (!mainRoute || !terrainDialogIndices) return
+    const { si, ei } = terrainDialogIndices
+    const newSeg: Segment = { startIndex: si, endIndex: ei, terrain, name: terrain === 'trail' ? 'トレイル' : 'ロード' }
+    // 重複範囲の既存セグメントを除いて追加
+    const filtered = mainRoute.segments.filter(s => s.endIndex < si || s.startIndex > ei)
+    updateRoute(mainRoute.id, { segments: [...filtered, newSeg] })
+    setTerrainDialogIndices(null)
+  }
+
+  const deleteTerrainSegment = (idx: number) => {
+    const mainRoute = routes.find(r => r.type === 'course')
+    if (!mainRoute) return
+    updateRoute(mainRoute.id, { segments: mainRoute.segments.filter((_, i) => i !== idx) })
   }
 
   const saveNewPoint = () => {
@@ -110,6 +156,48 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
       <hr className="border-gray-200" />
 
+      {/* トレイル/ロード区間設定 */}
+      {routes.find(r => r.type === 'course') && (() => {
+        const mainRoute = routes.find(r => r.type === 'course')!
+        return (
+          <section>
+            <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ トレイル/ロード区間</div>
+            {terrainStep === 'start' && (
+              <p className="text-xs text-blue-600 mb-1 font-semibold">📍 コース上をクリックして開始点を指定</p>
+            )}
+            {terrainStep === 'end' && (
+              <p className="text-xs text-blue-600 mb-1 font-semibold">📍 コース上をクリックして終了点を指定</p>
+            )}
+            <div className="flex gap-1 mb-2">
+              <button
+                onClick={() => { setTerrainStep('start'); setActiveTool('set_segment') }}
+                className={`text-xs px-2 py-1 rounded transition ${terrainStep ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+              >＋ 区間追加</button>
+              {terrainStep && (
+                <button onClick={() => { setTerrainStep(null); terrainStartIdxRef.current = null; setActiveTool('none') }}
+                  className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-600">キャンセル</button>
+              )}
+            </div>
+            {mainRoute.segments.length === 0 && (
+              <p className="text-xs text-gray-400">未設定（全区間トレイルとして扱います）</p>
+            )}
+            {mainRoute.segments.map((seg, i) => (
+              <div key={i} className="flex items-center gap-1 py-0.5 text-xs">
+                <span className={seg.terrain === 'trail' ? 'text-green-600' : 'text-amber-500'}>
+                  {seg.terrain === 'trail' ? '🌿' : '🚗'}
+                </span>
+                <span className="flex-1 text-gray-700">
+                  {seg.terrain === 'trail' ? 'トレイル' : 'ロード'} (idx {seg.startIndex}–{seg.endIndex})
+                </span>
+                <button onClick={() => deleteTerrainSegment(i)} className="text-gray-400 hover:text-red-500">🗑</button>
+              </div>
+            ))}
+          </section>
+        )
+      })()}
+
+      <hr className="border-gray-200" />
+
       {/* ポイント追加 */}
       <section>
         <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ ポイント</div>
@@ -159,6 +247,27 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
               <button onClick={saveNewPoint} disabled={!newPoint.name.trim()}
                 className="text-sm px-4 py-1.5 bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-40">追加</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 区間種別選択ダイアログ */}
+      {terrainDialogIndices && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-4">
+            <div className="font-bold text-gray-800">区間の種別を選択</div>
+            <div className="flex gap-2">
+              <button onClick={() => saveTerrainSegment('trail')}
+                className="flex-1 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold text-sm transition">
+                🌿 トレイル
+              </button>
+              <button onClick={() => saveTerrainSegment('road')}
+                className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-white rounded-lg font-semibold text-sm transition">
+                🚗 ロード
+              </button>
+            </div>
+            <button onClick={() => setTerrainDialogIndices(null)}
+              className="text-xs text-gray-400 hover:text-gray-600 text-center">キャンセル</button>
           </div>
         </div>
       )}
