@@ -105,13 +105,17 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
     if (!mainRoute) { clearPending(); return }
     const snap = snapToRoute(pendingLatLng, mainRoute.coords)
     if (!snap) { clearPending(); return }
+    // ratio >= 0.5 なら辺の終端座標、それ以外は始端座標に丸める
+    const idx = snap.ratio >= 0.5
+      ? Math.min(snap.segmentIndex + 1, mainRoute.coords.length - 1)
+      : snap.segmentIndex
     if (terrainStep === 'start') {
-      terrainStartIdxRef.current = snap.segmentIndex
+      terrainStartIdxRef.current = idx
       setTerrainStep('end')
       clearPending()
     } else if (terrainStep === 'end') {
-      const si = Math.min(terrainStartIdxRef.current!, snap.segmentIndex)
-      const ei = Math.max(terrainStartIdxRef.current!, snap.segmentIndex)
+      const si = Math.min(terrainStartIdxRef.current!, idx)
+      const ei = Math.max(terrainStartIdxRef.current!, idx)
       setTerrainDialogIndices({ si, ei })
       setTerrainStep(null)
       terrainStartIdxRef.current = null

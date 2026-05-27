@@ -262,7 +262,17 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         const maxDist = activeTool === 'set_junction' ? 5000 : 100
         const snap = snapToRoute(e.latlng, mainRoute.coords, maxDist)
         if (snap) {
-          marker.setLatLng([snap.foot.lat, snap.foot.lng])
+          let lat: number, lng: number
+          if (activeTool === 'set_segment') {
+            // 最近傍の座標点に丸めてプレビュー（EditPanelの保存ロジックと一致させる）
+            const ni = snap.ratio >= 0.5
+              ? Math.min(snap.segmentIndex + 1, mainRoute.coords.length - 1)
+              : snap.segmentIndex
+            ;({ lat, lng } = mainRoute.coords[ni])
+          } else {
+            ;({ lat, lng } = snap.foot)
+          }
+          marker.setLatLng([lat, lng])
           if (!map.hasLayer(marker)) marker.addTo(map)
         } else {
           marker.remove()
