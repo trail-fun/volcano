@@ -53,7 +53,7 @@ export default function App() {
         )}
         <aside
           className={`
-            w-80 bg-white border-l border-gray-200 flex flex-col p-3 overflow-hidden
+            w-56 md:w-80 bg-white border-l border-gray-200 flex flex-col p-2 md:p-3 overflow-hidden
             md:flex md:static md:translate-x-0
             fixed top-0 right-0 bottom-0 z-30 transition-transform duration-250
             ${sidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
