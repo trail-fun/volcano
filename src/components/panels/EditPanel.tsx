@@ -11,6 +11,26 @@ const POINT_LABELS: Record<PointType, string> = {
   exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所', custom: 'カスタム',
 }
 
+type EffectiveSeg = { startIndex: number; endIndex: number; terrain: Terrain; storedIndex: number | null }
+
+function computeEffectiveSegments(segments: Segment[], coordCount: number): EffectiveSeg[] {
+  if (coordCount < 2) return []
+  const n = coordCount - 1  // number of edges; coord range is [0, n]
+  if (segments.length === 0) return [{ startIndex: 0, endIndex: n, terrain: 'trail', storedIndex: null }]
+  const sorted = segments
+    .map((s, i) => ({ ...s, storedIndex: i }))
+    .sort((a, b) => a.startIndex - b.startIndex)
+  const result: EffectiveSeg[] = []
+  let cur = 0
+  for (const seg of sorted) {
+    if (seg.startIndex > cur) result.push({ startIndex: cur, endIndex: seg.startIndex, terrain: 'trail', storedIndex: null })
+    result.push({ startIndex: seg.startIndex, endIndex: seg.endIndex, terrain: seg.terrain, storedIndex: seg.storedIndex })
+    cur = seg.endIndex
+  }
+  if (cur < n) result.push({ startIndex: cur, endIndex: n, terrain: 'trail', storedIndex: null })
+  return result
+}
+
 type Props = { pendingLatLng: { lat: number; lng: number } | null; clearPending: () => void }
 
 export default function EditPanel({ pendingLatLng, clearPending }: Props) {
@@ -372,18 +392,17 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                   className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-600">キャンセル</button>
               )}
             </div>
-            {mainRoute.segments.length === 0 && (
-              <p className="text-xs text-gray-400">未設定（全区間トレイルとして扱います）</p>
-            )}
-            {mainRoute.segments.map((seg, i) => (
+            {computeEffectiveSegments(mainRoute.segments, mainRoute.coords.length).map((seg, i) => (
               <div key={i} className="flex items-center gap-1 py-0.5 text-xs">
                 <span className={seg.terrain === 'trail' ? 'text-green-600' : 'text-amber-500'}>
                   {seg.terrain === 'trail' ? '🌿' : '🚗'}
                 </span>
-                <span className="flex-1 text-gray-700">
-                  {seg.terrain === 'trail' ? 'トレイル' : 'ロード'} (idx {seg.startIndex}–{seg.endIndex})
+                <span className={`flex-1 ${seg.storedIndex !== null ? 'text-gray-700' : 'text-gray-400'}`}>
+                  {seg.terrain === 'trail' ? 'トレイル' : 'ロード'} ({seg.startIndex}–{seg.endIndex})
                 </span>
-                <button onClick={() => deleteTerrainSegment(i)} className="text-gray-400 hover:text-red-500">🗑</button>
+                {seg.storedIndex !== null && (
+                  <button onClick={() => deleteTerrainSegment(seg.storedIndex!)} className="text-gray-400 hover:text-red-500">🗑</button>
+                )}
               </div>
             ))}
           </section>

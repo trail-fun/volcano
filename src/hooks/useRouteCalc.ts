@@ -51,18 +51,25 @@ export function calcCandidates(
 
   // ── メインコース上のゴール地点（進行・引き返し） ──
   for (const goal of goals) {
-    const goalSnap = snapToRoute(goal, coords)
-    if (!goalSnap) continue
-    const goalIdx = goalSnap.segmentIndex
+    const rawGoalSnap = snapToRoute(goal, coords)
+    if (!rawGoalSnap) continue
+    // Snap to nearest coordinate index so terrain boundary comparisons work correctly.
+    // A goal at coords[k] (end of road edge k-1 / start of trail edge k) must resolve to
+    // coordinate k, not segment k-1, to avoid false hasRoadSection positives.
+    const goalCoordIdx = rawGoalSnap.ratio >= 0.5
+      ? Math.min(rawGoalSnap.segmentIndex + 1, coords.length - 1)
+      : rawGoalSnap.segmentIndex
+    const goalIdx = goalCoordIdx < coords.length - 1 ? goalCoordIdx : goalCoordIdx - 1
+    const goalRatio = goalCoordIdx < coords.length - 1 ? 0.0 : 1.0
 
-    const isForward = goalIdx > snapIdx || (goalIdx === snapIdx && goalSnap.ratio >= snapRatio)
+    const isForward = goalIdx > snapIdx || (goalIdx === snapIdx && goalRatio >= snapRatio)
     const direction = isForward ? 'forward' : 'backward'
 
     let pathCoords: LatLngEle[]
     if (isForward) {
-      pathCoords = sliceCoords(coords, snapIdx, snapRatio, goalIdx, goalSnap.ratio)
+      pathCoords = sliceCoords(coords, snapIdx, snapRatio, goalIdx, goalRatio)
     } else {
-      pathCoords = sliceCoords(coords, goalIdx, goalSnap.ratio, snapIdx, snapRatio).reverse()
+      pathCoords = sliceCoords(coords, goalIdx, goalRatio, snapIdx, snapRatio).reverse()
     }
 
     const distM = pathCoords.reduce((s, _, i) => i === 0 ? s : s + haversine(pathCoords[i - 1], pathCoords[i]), 0)
