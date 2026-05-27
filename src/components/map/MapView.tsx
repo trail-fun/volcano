@@ -7,6 +7,7 @@ import { useCasualtyStore } from '../../store/casualtyStore'
 import { useDrawingStore } from '../../store/drawingStore'
 import { calcCandidates } from '../../hooks/useRouteCalc'
 import { POINT_ICONS, ROUTE_STYLES, TERRAIN_STYLES, CANDIDATE_COLORS } from './mapStyles'
+import { snapToRoute } from '../../utils/geo'
 import type { Segment, LatLngEle } from '../../types/race'
 
 // コースを terrain 種別ごとのランに分割
@@ -62,6 +63,10 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
   const { routeType: drawingRouteType, points: drawingPoints, addPoint: addDrawingPoint } = useDrawingStore()
   const drawingLayersRef = useRef<L.Layer[]>([])
   const vertexLayersRef = useRef<L.Layer[]>([])
+  const snapPreviewRef = useRef<L.CircleMarker | L.Marker | null>(null)
+  // routesの最新値をmousemoveクロージャから参照するためのref
+  const routesRef = useRef(routes)
+  useEffect(() => { routesRef.current = routes }, [routes])
 
   // 地図初期化
   useEffect(() => {
@@ -225,6 +230,61 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
       })
     }
   }, [routes, mode])
+
+  // スナッププレビュー（set_segment / set_junction / add_point）
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    // 対象外ツールはプレビュー削除して終了
+    const snapTools = activeTool === 'set_segment' || activeTool === 'set_junction'
+    const pinTool = activeTool === 'add_point'
+    if (!snapTools && !pinTool) {
+      snapPreviewRef.current?.remove()
+      snapPreviewRef.current = null
+      return
+    }
+
+    // マーカーを1つ生成して使い回す
+    const marker = snapTools
+      ? L.circleMarker([0, 0], { radius: 8, color: '#f97316', fillColor: '#fb923c', fillOpacity: 0.9, weight: 3 })
+      : L.marker([0, 0], {
+          icon: L.divIcon({
+            html: '<div style="font-size:20px;line-height:1;filter:drop-shadow(0 2px 3px rgba(0,0,0,.4));opacity:0.75">📍</div>',
+            iconSize: [24, 24], iconAnchor: [12, 24], className: '',
+          }),
+        })
+
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      if (snapTools) {
+        const mainRoute = routesRef.current.find(r => r.type === 'course')
+        if (!mainRoute) return
+        const maxDist = activeTool === 'set_junction' ? 5000 : 100
+        const snap = snapToRoute(e.latlng, mainRoute.coords, maxDist)
+        if (snap) {
+          marker.setLatLng([snap.foot.lat, snap.foot.lng])
+          if (!map.hasLayer(marker)) marker.addTo(map)
+        } else {
+          marker.remove()
+        }
+      } else {
+        marker.setLatLng(e.latlng)
+        if (!map.hasLayer(marker)) marker.addTo(map)
+      }
+    }
+    const onMouseOut = () => marker.remove()
+
+    map.on('mousemove', onMouseMove)
+    map.on('mouseout', onMouseOut)
+    snapPreviewRef.current = marker
+
+    return () => {
+      map.off('mousemove', onMouseMove)
+      map.off('mouseout', onMouseOut)
+      marker.remove()
+      snapPreviewRef.current = null
+    }
+  }, [activeTool])
 
   // 手描きプレビュー
   useEffect(() => {
