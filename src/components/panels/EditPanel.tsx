@@ -51,6 +51,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [editRouteName, setEditRouteName] = useState('')
   const [editSegmentIdx, setEditSegmentIdx] = useState<number | null>(null)
   const [editSegmentName, setEditSegmentName] = useState('')
+  const [editImplicitSeg, setEditImplicitSeg] = useState<{ startIndex: number; endIndex: number } | null>(null)
   // ルートスナップ確認ダイアログ
   const [snapConfirm, setSnapConfirm] = useState<{
     original: { lat: number; lng: number }
@@ -486,11 +487,13 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                 <span className={`flex-1 ${seg.storedIndex !== null ? 'text-gray-700' : 'text-gray-400'}`}>
                   {seg.name}
                 </span>
-                {seg.storedIndex !== null && (
+                {seg.storedIndex !== null ? (
                   <>
                     <button onClick={e => { e.stopPropagation(); setEditSegmentIdx(seg.storedIndex!); setEditSegmentName(mainRoute.segments[seg.storedIndex!].name) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
                     <button onClick={e => { e.stopPropagation(); deleteTerrainSegment(seg.storedIndex!) }} className="text-gray-400 hover:text-red-500">🗑</button>
                   </>
+                ) : (
+                  <button onClick={e => { e.stopPropagation(); setEditImplicitSeg({ startIndex: seg.startIndex, endIndex: seg.endIndex }); setEditSegmentName(seg.name) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
                 )}
               </div>
             ))}
@@ -546,9 +549,10 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       )}
 
       {/* 区間名編集ダイアログ */}
-      {editSegmentIdx !== null && (() => {
+      {(editSegmentIdx !== null || editImplicitSeg !== null) && (() => {
         const mainRoute = routes.find(r => r.type === 'course')
         if (!mainRoute) return null
+        const closeDialog = () => { setEditSegmentIdx(null); setEditImplicitSeg(null) }
         return (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-3">
@@ -556,14 +560,21 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
               <input className="border rounded px-2 py-1 text-sm" placeholder="区間名" value={editSegmentName}
                 onChange={e => setEditSegmentName(e.target.value)} autoFocus />
               <div className="flex gap-2 justify-end">
-                <button onClick={() => setEditSegmentIdx(null)} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+                <button onClick={closeDialog} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
                 <button
                   onClick={() => {
-                    const newSegs = mainRoute.segments.map((s, i) =>
-                      i === editSegmentIdx ? { ...s, name: editSegmentName } : s
-                    )
-                    updateRoute(mainRoute.id, { segments: newSegs })
-                    setEditSegmentIdx(null)
+                    if (editSegmentIdx !== null) {
+                      updateRoute(mainRoute.id, {
+                        segments: mainRoute.segments.map((s, i) =>
+                          i === editSegmentIdx ? { ...s, name: editSegmentName } : s
+                        ),
+                      })
+                    } else if (editImplicitSeg !== null) {
+                      updateRoute(mainRoute.id, {
+                        segments: [...mainRoute.segments, { ...editImplicitSeg, terrain: 'trail' as const, name: editSegmentName }],
+                      })
+                    }
+                    closeDialog()
                   }}
                   className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-500">保存</button>
               </div>
