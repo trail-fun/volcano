@@ -1,4 +1,4 @@
-import type { Transport, Difficulty } from './race'
+import type { Transport, Difficulty, LatLngEle } from './race'
 
 export type CandidateSegment = {
   routeId: string
@@ -19,4 +19,5 @@ export type RouteCandidate = {
   totalAscentM: number
   difficulty: Difficulty
   transportSuitability: Transport[]
+  pathCoords: LatLngEle[]
 }

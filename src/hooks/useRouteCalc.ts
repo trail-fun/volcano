@@ -87,6 +87,7 @@ export function calcCandidates(
       totalAscentM: ascentM,
       difficulty: mainRoute.difficulty,
       transportSuitability: mainRoute.transportSuitability,
+      pathCoords,
     })
   }
 
@@ -142,6 +143,7 @@ export function calcCandidates(
           totalAscentM: ascentM,
           difficulty: esc.difficulty,
           transportSuitability: esc.transportSuitability,
+          pathCoords: fullPath,
         })
       }
     }
