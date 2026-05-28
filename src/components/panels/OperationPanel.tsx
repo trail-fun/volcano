@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useRaceStore } from '../../store/raceStore'
 import { useCasualtyStore } from '../../store/casualtyStore'
 import { calcCandidates } from '../../hooks/useRouteCalc'
-import { haversine } from '../../utils/geo'
+import { haversine, snapToRoute } from '../../utils/geo'
 import { POINT_ICONS, CANDIDATE_COLORS } from '../map/mapStyles'
 import type { RouteCandidate } from '../../types/candidate'
 import type { Point } from '../../types/race'
@@ -12,6 +12,8 @@ import type { Point } from '../../types/race'
 function ElevationProfileModal({
   candidate, points, onClose,
 }: { candidate: RouteCandidate; points: Point[]; onClose: () => void }) {
+  const [selectedMarkerIdx, setSelectedMarkerIdx] = useState<number | null>(null)
+
   const { pathCoords } = candidate
   if (!pathCoords || pathCoords.length < 2) return null
 
@@ -38,21 +40,33 @@ function ElevationProfileModal({
   const linePts = pathCoords.map((c, i) => `${toX(dists[i])},${toY(c.ele)}`).join(' ')
   const areaPts = `${toX(0)},${PAD.t + cH} ${linePts} ${toX(totalDist)},${PAD.t + cH}`
 
-  type Marker = { icon: string; dist: number; ele: number }
-  const markers: Marker[] = [{ icon: '🚨', dist: 0, ele: eles[0] }]
+  type Marker = { icon: string; dist: number; ele: number; label: string; note: string }
+  const markers: Marker[] = []
 
+  // 傷病者（始点、常に表示）
+  markers.push({ icon: '🚨', dist: 0, ele: eles[0], label: '傷病者', note: '' })
+
+  // 下山口ゴール（終点、常に表示）
+  const exitPt = points.find(p => p.id === candidate.exitPointId)
+  if (exitPt) {
+    markers.push({ icon: POINT_ICONS[exitPt.type], dist: totalDist, ele: eles[eles.length - 1], label: exitPt.name, note: exitPt.note })
+  }
+
+  // ルート線上にあるポイント（ゴール以外、30m 以内）
   for (const pt of points) {
-    if (!pt.enabled) continue
-    let minD = Infinity, minIdx = 0
-    for (let i = 0; i < pathCoords.length; i++) {
-      const d = haversine(pt, pathCoords[i])
-      if (d < minD) { minD = d; minIdx = i }
-    }
-    if (minD < 100) markers.push({ icon: POINT_ICONS[pt.type], dist: dists[minIdx], ele: eles[minIdx] })
+    if (!pt.enabled || pt.id === candidate.exitPointId) continue
+    const snap = snapToRoute(pt, pathCoords, 30)
+    if (!snap) continue
+    const si = snap.segmentIndex
+    const ni = Math.min(si + 1, pathCoords.length - 1)
+    const snapDist = dists[si] + snap.ratio * haversine(pathCoords[si], pathCoords[ni])
+    const snapEle = pathCoords[si].ele + snap.ratio * (pathCoords[ni].ele - pathCoords[si].ele)
+    markers.push({ icon: POINT_ICONS[pt.type], dist: snapDist, ele: snapEle, label: pt.name, note: pt.note })
   }
   markers.sort((a, b) => a.dist - b.dist)
 
   const yTicks = [minEle, (minEle + maxEle) / 2, maxEle]
+  const sel = selectedMarkerIdx !== null ? markers[selectedMarkerIdx] : null
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
@@ -83,10 +97,12 @@ function ElevationProfileModal({
               const mx = toX(m.dist)
               const my = toY(m.ele)
               const above = my > PAD.t + cH * 0.55
+              const isSelected = selectedMarkerIdx === mi
               return (
-                <g key={mi}>
+                <g key={mi} style={{ cursor: 'pointer' }}
+                  onClick={() => setSelectedMarkerIdx(isSelected ? null : mi)}>
                   <line x1={mx} y1={PAD.t} x2={mx} y2={PAD.t + cH} stroke="#6b7280" strokeWidth="1" strokeDasharray="3,2" opacity="0.5" />
-                  <circle cx={mx} cy={my} r="3.5" fill="white" stroke="#374151" strokeWidth="1.5" />
+                  <circle cx={mx} cy={my} r={isSelected ? 5 : 3.5} fill={isSelected ? '#dbeafe' : 'white'} stroke={isSelected ? '#2563eb' : '#374151'} strokeWidth="1.5" />
                   <text x={mx} y={above ? my - 6 : my + 17} textAnchor="middle" fontSize="13" style={{ userSelect: 'none' }}>{m.icon}</text>
                 </g>
               )
@@ -94,6 +110,14 @@ function ElevationProfileModal({
             <text x={12} y={PAD.t + cH / 2} textAnchor="middle" fontSize="9" fill="#9ca3af"
               transform={`rotate(-90,12,${PAD.t + cH / 2})`}>標高(m)</text>
           </svg>
+        )}
+
+        {/* マーカー選択時ポップアップ */}
+        {sel && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs">
+            <div className="font-semibold text-gray-800">{sel.icon} {sel.label}</div>
+            {sel.note && <div className="text-gray-500 mt-0.5">{sel.note}</div>}
+          </div>
         )}
 
         <div className="flex gap-4 text-xs font-mono text-gray-600 border-t pt-2">
