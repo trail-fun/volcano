@@ -35,7 +35,7 @@ function computeEffectiveSegments(segments: Segment[], coordCount: number): Effe
 type Props = { pendingLatLng: { lat: number; lng: number } | null; clearPending: () => void }
 
 export default function EditPanel({ pendingLatLng, clearPending }: Props) {
-  const { race, routes, points, setRace, exportToZip, addPoint, updatePoint, deletePoint, addRoute, updateRoute, setJunction } = useRaceStore()
+  const { race, routes, points, history, setRace, exportToZip, addPoint, updatePoint, deletePoint, addRoute, updateRoute, setJunction, undo } = useRaceStore()
   const { activeTool, setActiveTool } = useModeStore()
   const { routeType: drawingRouteType, points: drawingPoints, startDrawing, removeLastPoint, clearDrawing } = useDrawingStore()
   const { fitBounds, panTo } = useMapStore()
@@ -330,6 +330,18 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
   return (
     <div className="flex flex-col gap-3 h-full overflow-y-auto">
+      {/* ツールバー */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={undo}
+          disabled={history.length === 0}
+          className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1"
+          title={`元に戻す（${history.length} 件）`}
+        >
+          ↩ 元に戻す
+        </button>
+      </div>
+
       {/* 大会名 */}
       <div>
         <label className="text-xs text-gray-500 font-semibold block mb-1">大会名</label>

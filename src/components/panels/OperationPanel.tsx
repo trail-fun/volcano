@@ -164,16 +164,21 @@ function ElevationCompareModal({
         )}
 
         {/* 凡例 */}
-        <div className="flex flex-col gap-1 border-t pt-2">
+        <div className="flex flex-col gap-2 border-t pt-2">
           {data.map((d, di) => (
-            <div key={di} className="flex items-center gap-2 text-xs">
-              <span style={{ width: 20, height: 3, backgroundColor: d.color, display: 'inline-block', borderRadius: 2, flexShrink: 0 }} />
-              <span className="truncate flex-1 text-gray-700">
-                {d.c.exitPointType === 'helipad' ? '🚁' : '🚩'} {d.c.exitPointName}
-                <span className="text-gray-400 ml-1 text-[10px]">{d.c.label}</span>
-              </span>
-              <span className="font-mono text-gray-600 whitespace-nowrap">📏 {(d.totalDist / 1000).toFixed(2)} km</span>
-              <span className="font-mono text-blue-600 whitespace-nowrap">↓ {Math.round(d.c.totalDescentM)} m</span>
+            <div key={di} className="text-xs">
+              <div className="flex items-center gap-1.5">
+                <span style={{ width: 20, height: 3, backgroundColor: d.color, display: 'inline-block', borderRadius: 2, flexShrink: 0 }} />
+                <span className="truncate font-semibold text-gray-700">
+                  {d.c.exitPointType === 'helipad' ? '🚁' : '🚩'} {d.c.exitPointName}
+                </span>
+              </div>
+              <div className="ml-6 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-gray-500 mt-0.5">
+                <span className="text-gray-400">{d.c.label}</span>
+                <span className="text-gray-700">📏 {(d.totalDist / 1000).toFixed(2)} km</span>
+                <span className="text-blue-600">↓ {Math.round(d.c.totalDescentM)} m</span>
+                {d.c.totalAscentM > 0 && <span className="text-red-500">↑ {Math.round(d.c.totalAscentM)} m</span>}
+              </div>
             </div>
           ))}
         </div>
