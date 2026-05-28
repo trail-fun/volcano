@@ -12,23 +12,23 @@ const POINT_LABELS: Record<PointType, string> = {
   exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所', closure: '通行止め', gate: '鍵', custom: 'カスタム',
 }
 
-type EffectiveSeg = { startIndex: number; endIndex: number; terrain: Terrain; storedIndex: number | null }
+type EffectiveSeg = { startIndex: number; endIndex: number; terrain: Terrain; name: string; storedIndex: number | null }
 
 function computeEffectiveSegments(segments: Segment[], coordCount: number): EffectiveSeg[] {
   if (coordCount < 2) return []
   const n = coordCount - 1  // number of edges; coord range is [0, n]
-  if (segments.length === 0) return [{ startIndex: 0, endIndex: n, terrain: 'trail', storedIndex: null }]
+  if (segments.length === 0) return [{ startIndex: 0, endIndex: n, terrain: 'trail', name: 'トレイル', storedIndex: null }]
   const sorted = segments
     .map((s, i) => ({ ...s, storedIndex: i }))
     .sort((a, b) => a.startIndex - b.startIndex)
   const result: EffectiveSeg[] = []
   let cur = 0
   for (const seg of sorted) {
-    if (seg.startIndex > cur) result.push({ startIndex: cur, endIndex: seg.startIndex, terrain: 'trail', storedIndex: null })
-    result.push({ startIndex: seg.startIndex, endIndex: seg.endIndex, terrain: seg.terrain, storedIndex: seg.storedIndex })
+    if (seg.startIndex > cur) result.push({ startIndex: cur, endIndex: seg.startIndex, terrain: 'trail', name: 'トレイル', storedIndex: null })
+    result.push({ startIndex: seg.startIndex, endIndex: seg.endIndex, terrain: seg.terrain, name: seg.name, storedIndex: seg.storedIndex })
     cur = seg.endIndex
   }
-  if (cur < n) result.push({ startIndex: cur, endIndex: n, terrain: 'trail', storedIndex: null })
+  if (cur < n) result.push({ startIndex: cur, endIndex: n, terrain: 'trail', name: 'トレイル', storedIndex: null })
   return result
 }
 
@@ -478,22 +478,19 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                   const sliced = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
                   if (sliced.length >= 2) fitBounds(sliced)
                 }}
-                onDoubleClick={() => {
-                  if (seg.storedIndex !== null) {
-                    setEditSegmentIdx(seg.storedIndex)
-                    setEditSegmentName(mainRoute.segments[seg.storedIndex].name)
-                  }
-                }}
-                title={seg.storedIndex !== null ? 'クリック：地図に表示　ダブルクリック：名前を変更' : 'クリック：地図に表示'}
+                title="クリック：地図に表示"
               >
                 <span className={seg.terrain === 'trail' ? 'text-green-600' : 'text-amber-500'}>
                   {seg.terrain === 'trail' ? '🌿' : '🚗'}
                 </span>
                 <span className={`flex-1 ${seg.storedIndex !== null ? 'text-gray-700' : 'text-gray-400'}`}>
-                  {seg.terrain === 'trail' ? 'トレイル' : 'ロード'} ({seg.startIndex}–{seg.endIndex})
+                  {seg.name}
                 </span>
                 {seg.storedIndex !== null && (
-                  <button onClick={e => { e.stopPropagation(); deleteTerrainSegment(seg.storedIndex!) }} className="text-gray-400 hover:text-red-500">🗑</button>
+                  <>
+                    <button onClick={e => { e.stopPropagation(); setEditSegmentIdx(seg.storedIndex!); setEditSegmentName(mainRoute.segments[seg.storedIndex!].name) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
+                    <button onClick={e => { e.stopPropagation(); deleteTerrainSegment(seg.storedIndex!) }} className="text-gray-400 hover:text-red-500">🗑</button>
+                  </>
                 )}
               </div>
             ))}
