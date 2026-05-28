@@ -2,13 +2,14 @@ import { useRef, useState, useEffect } from 'react'
 import { useRaceStore } from '../../store/raceStore'
 import { useModeStore } from '../../store/modeStore'
 import { useDrawingStore } from '../../store/drawingStore'
+import { useMapStore } from '../../store/mapStore'
 import { parseGpx } from '../../utils/gpxParser'
 import { snapToRoute, fetchElevation, haversine } from '../../utils/geo'
 import type { PointType, Route, Terrain, Segment, LatLngEle } from '../../types/race'
 import { POINT_ICONS } from '../map/mapStyles'
 
 const POINT_LABELS: Record<PointType, string> = {
-  exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所', custom: 'カスタム',
+  exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所', closure: '通行止め', gate: '鍵', custom: 'カスタム',
 }
 
 type EffectiveSeg = { startIndex: number; endIndex: number; terrain: Terrain; storedIndex: number | null }
@@ -37,6 +38,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const { race, routes, points, setRace, exportToZip, addPoint, updatePoint, deletePoint, addRoute, updateRoute, setJunction } = useRaceStore()
   const { activeTool, setActiveTool } = useModeStore()
   const { routeType: drawingRouteType, points: drawingPoints, startDrawing, removeLastPoint, clearDrawing } = useDrawingStore()
+  const { fitBounds, panTo } = useMapStore()
   const escGpxRef = useRef<HTMLInputElement>(null)
   const roadGpxRef = useRef<HTMLInputElement>(null)
   const newPointPhotoRef = useRef<HTMLInputElement>(null)
@@ -44,6 +46,11 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
   const [newPoint, setNewPoint] = useState<{ type: PointType; name: string; note: string; photos: string[] } | null>(null)
   const [editPointId, setEditPointId] = useState<string | null>(null)
+  // ルート・区間の名前編集ダイアログ
+  const [editRouteId, setEditRouteId] = useState<string | null>(null)
+  const [editRouteName, setEditRouteName] = useState('')
+  const [editSegmentIdx, setEditSegmentIdx] = useState<number | null>(null)
+  const [editSegmentName, setEditSegmentName] = useState('')
   // ルートスナップ確認ダイアログ
   const [snapConfirm, setSnapConfirm] = useState<{
     original: { lat: number; lng: number }
@@ -346,7 +353,12 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
         {routes.map(r => (
           <div key={r.id}>
-            <div className="text-sm py-1 flex items-center gap-1">
+            <div
+              className="text-sm py-1 flex items-center gap-1 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+              onClick={() => r.coords.length >= 2 && fitBounds(r.coords)}
+              onDoubleClick={() => { setEditRouteId(r.id); setEditRouteName(r.name) }}
+              title="クリック：地図に表示　ダブルクリック：名前を変更"
+            >
               <span className={r.type === 'course' ? 'text-green-600' : r.type === 'escape' ? 'text-blue-600' : 'text-gray-400'}>
                 {r.type === 'course' ? '🟢' : r.type === 'escape' ? '🔵' : '⚫'}
               </span>
@@ -460,7 +472,20 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
               )}
             </div>
             {computeEffectiveSegments(mainRoute.segments, mainRoute.coords.length).map((seg, i) => (
-              <div key={i} className="flex items-center gap-1 py-0.5 text-xs">
+              <div key={i}
+                className="flex items-center gap-1 py-0.5 text-xs cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+                onClick={() => {
+                  const sliced = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
+                  if (sliced.length >= 2) fitBounds(sliced)
+                }}
+                onDoubleClick={() => {
+                  if (seg.storedIndex !== null) {
+                    setEditSegmentIdx(seg.storedIndex)
+                    setEditSegmentName(mainRoute.segments[seg.storedIndex].name)
+                  }
+                }}
+                title={seg.storedIndex !== null ? 'クリック：地図に表示　ダブルクリック：名前を変更' : 'クリック：地図に表示'}
+              >
                 <span className={seg.terrain === 'trail' ? 'text-green-600' : 'text-amber-500'}>
                   {seg.terrain === 'trail' ? '🌿' : '🚗'}
                 </span>
@@ -468,7 +493,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                   {seg.terrain === 'trail' ? 'トレイル' : 'ロード'} ({seg.startIndex}–{seg.endIndex})
                 </span>
                 {seg.storedIndex !== null && (
-                  <button onClick={() => deleteTerrainSegment(seg.storedIndex!)} className="text-gray-400 hover:text-red-500">🗑</button>
+                  <button onClick={e => { e.stopPropagation(); deleteTerrainSegment(seg.storedIndex!) }} className="text-gray-400 hover:text-red-500">🗑</button>
                 )}
               </div>
             ))}
@@ -489,16 +514,66 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         </button>
 
         {points.map(pt => (
-          <div key={pt.id} className="flex items-center gap-1 py-0.5">
+          <div key={pt.id}
+            className="flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+            onClick={() => panTo({ lat: pt.lat, lng: pt.lng })}
+            onDoubleClick={() => setEditPointId(pt.id)}
+            title="クリック：地図に表示　ダブルクリック：編集"
+          >
             <span className="text-base">{POINT_ICONS[pt.type]}</span>
             <span className={`flex-1 text-sm truncate ${!pt.enabled ? 'opacity-40 line-through' : ''}`}>{pt.name}</span>
-            <button onClick={() => setEditPointId(pt.id)} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
-            <button onClick={() => deletePoint(pt.id)} className="text-xs text-gray-400 hover:text-red-500">🗑</button>
+            <button onClick={e => { e.stopPropagation(); setEditPointId(pt.id) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
+            <button onClick={e => { e.stopPropagation(); deletePoint(pt.id) }} className="text-xs text-gray-400 hover:text-red-500">🗑</button>
           </div>
         ))}
       </section>
 
       <hr className="border-gray-200" />
+
+      {/* ルート名編集ダイアログ */}
+      {editRouteId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-3">
+            <div className="font-bold text-gray-800">ルート名を変更</div>
+            <input className="border rounded px-2 py-1 text-sm" placeholder="ルート名" value={editRouteName}
+              onChange={e => setEditRouteName(e.target.value)} autoFocus />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditRouteId(null)} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+              <button
+                onClick={() => { updateRoute(editRouteId, { name: editRouteName }); setEditRouteId(null) }}
+                disabled={!editRouteName.trim()}
+                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-500 disabled:opacity-40">保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 区間名編集ダイアログ */}
+      {editSegmentIdx !== null && (() => {
+        const mainRoute = routes.find(r => r.type === 'course')
+        if (!mainRoute) return null
+        return (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-3">
+              <div className="font-bold text-gray-800">区間名を変更</div>
+              <input className="border rounded px-2 py-1 text-sm" placeholder="区間名" value={editSegmentName}
+                onChange={e => setEditSegmentName(e.target.value)} autoFocus />
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setEditSegmentIdx(null)} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+                <button
+                  onClick={() => {
+                    const newSegs = mainRoute.segments.map((s, i) =>
+                      i === editSegmentIdx ? { ...s, name: editSegmentName } : s
+                    )
+                    updateRoute(mainRoute.id, { segments: newSegs })
+                    setEditSegmentIdx(null)
+                  }}
+                  className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-500">保存</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 保存 */}
       <button onClick={exportToZip}

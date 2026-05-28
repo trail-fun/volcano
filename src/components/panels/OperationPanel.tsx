@@ -1,11 +1,28 @@
 import { useState } from 'react'
 import { useRaceStore } from '../../store/raceStore'
 import { useCasualtyStore } from '../../store/casualtyStore'
+import { useMapStore } from '../../store/mapStore'
 import { calcCandidates } from '../../hooks/useRouteCalc'
 import { haversine, snapToRoute } from '../../utils/geo'
 import { POINT_ICONS, CANDIDATE_COLORS } from '../map/mapStyles'
 import type { RouteCandidate } from '../../types/candidate'
-import type { Point } from '../../types/race'
+import type { Point, Terrain, Segment } from '../../types/race'
+
+function computeEffectiveSegments(segments: Segment[], coordCount: number): { startIndex: number; endIndex: number; terrain: Terrain; name: string }[] {
+  if (coordCount < 2) return []
+  const n = coordCount - 1
+  if (segments.length === 0) return [{ startIndex: 0, endIndex: n, terrain: 'trail', name: 'トレイル' }]
+  const sorted = [...segments].sort((a, b) => a.startIndex - b.startIndex)
+  const result: { startIndex: number; endIndex: number; terrain: Terrain; name: string }[] = []
+  let cur = 0
+  for (const seg of sorted) {
+    if (seg.startIndex > cur) result.push({ startIndex: cur, endIndex: seg.startIndex, terrain: 'trail', name: 'トレイル' })
+    result.push({ startIndex: seg.startIndex, endIndex: seg.endIndex, terrain: seg.terrain, name: seg.name })
+    cur = seg.endIndex
+  }
+  if (cur < n) result.push({ startIndex: cur, endIndex: n, terrain: 'trail', name: 'トレイル' })
+  return result
+}
 
 // ─── 高低図モーダル ──────────────────────────────────────────────────────────
 
@@ -181,12 +198,14 @@ function CandidateCard({
 export default function OperationPanel() {
   const { routes, points, togglePoint } = useRaceStore()
   const { position, candidates, selectedCandidateId, setPosition, selectCandidate, clearCasualty } = useCasualtyStore()
+  const { fitBounds, panTo } = useMapStore()
   const [latStr, setLatStr] = useState('')
   const [lngStr, setLngStr] = useState('')
   const [chartCandidateId, setChartCandidateId] = useState<string | null>(null)
 
   const goals = points.filter(p => p.type === 'exit' || p.type === 'helipad')
   const chartCandidate = chartCandidateId ? (candidates.find(c => c.id === chartCandidateId) ?? null) : null
+  const mainRoute = routes.find(r => r.type === 'course')
 
   const setManualPosition = () => {
     const lat = parseFloat(latStr), lng = parseFloat(lngStr)
@@ -238,16 +257,70 @@ export default function OperationPanel() {
 
       <hr className="border-gray-200" />
 
+      {/* ルート */}
+      <section>
+        <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ ルート</div>
+        {routes.length === 0 && <p className="text-xs text-gray-400">ルートが登録されていません</p>}
+        {routes.map(r => (
+          <div
+            key={r.id}
+            className="text-sm py-1 flex items-center gap-1 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+            onClick={() => r.coords.length >= 2 && fitBounds(r.coords)}
+            title="クリックで地図に表示"
+          >
+            <span className={r.type === 'course' ? 'text-green-600' : r.type === 'escape' ? 'text-blue-600' : 'text-gray-400'}>
+              {r.type === 'course' ? '🟢' : r.type === 'escape' ? '🔵' : '⚫'}
+            </span>
+            <span className="flex-1 truncate">{r.name}</span>
+            <span className="text-xs text-gray-400">
+              {r.type === 'course' ? 'メイン' : r.type === 'escape' ? 'エスケープ' : '車道'}
+            </span>
+          </div>
+        ))}
+      </section>
+
+      <hr className="border-gray-200" />
+
+      {/* トレイル/ロード区間 */}
+      {mainRoute && (
+        <section>
+          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ トレイル/ロード区間</div>
+          {computeEffectiveSegments(mainRoute.segments, mainRoute.coords.length).map((seg, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-1 py-0.5 text-xs cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+              onClick={() => {
+                const sliced = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
+                if (sliced.length >= 2) fitBounds(sliced)
+              }}
+              title="クリックで地図に表示"
+            >
+              <span className={seg.terrain === 'trail' ? 'text-green-600' : 'text-amber-500'}>
+                {seg.terrain === 'trail' ? '🌿' : '🚗'}
+              </span>
+              <span className="flex-1 text-gray-700">{seg.name}</span>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <hr className="border-gray-200" />
+
       {/* ゴール地点オン/オフ */}
       <section>
         <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ ゴール地点</div>
         {goals.length === 0 && <p className="text-xs text-gray-400">下山口・ヘリポートが未登録です</p>}
         {goals.map(pt => (
-          <label key={pt.id} className="flex items-center gap-2 py-0.5 cursor-pointer">
-            <input type="checkbox" checked={pt.enabled} onChange={() => togglePoint(pt.id)} className="rounded" />
-            <span className="text-base">{POINT_ICONS[pt.type]}</span>
-            <span className={`text-sm ${!pt.enabled ? 'opacity-40 line-through' : ''}`}>{pt.name}</span>
-          </label>
+          <div key={pt.id} className="flex items-center gap-2 py-0.5">
+            <input type="checkbox" checked={pt.enabled} onChange={() => togglePoint(pt.id)} className="rounded cursor-pointer" />
+            <button
+              onClick={() => panTo({ lat: pt.lat, lng: pt.lng })}
+              className="flex items-center gap-1.5 flex-1 text-left hover:bg-gray-50 rounded px-1 -mx-1 transition"
+            >
+              <span className="text-base">{POINT_ICONS[pt.type]}</span>
+              <span className={`text-sm ${!pt.enabled ? 'opacity-40 line-through' : ''}`}>{pt.name}</span>
+            </button>
+          </div>
         ))}
       </section>
 

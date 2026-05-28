@@ -5,6 +5,7 @@ import { useRaceStore } from '../../store/raceStore'
 import { useModeStore } from '../../store/modeStore'
 import { useCasualtyStore } from '../../store/casualtyStore'
 import { useDrawingStore } from '../../store/drawingStore'
+import { useMapStore } from '../../store/mapStore'
 import { calcCandidates } from '../../hooks/useRouteCalc'
 import { POINT_ICONS, ROUTE_STYLES, TERRAIN_STYLES, CANDIDATE_COLORS } from './mapStyles'
 import { snapToRoute } from '../../utils/geo'
@@ -76,12 +77,25 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
   const { mode, activeTool } = useModeStore()
   const { position, selectedCandidateId, setPosition, candidates } = useCasualtyStore()
   const { routeType: drawingRouteType, points: drawingPoints, addPoint: addDrawingPoint } = useDrawingStore()
+  const { command } = useMapStore()
   const drawingLayersRef = useRef<L.Layer[]>([])
   const vertexLayersRef = useRef<L.Layer[]>([])
   const snapPreviewRef = useRef<L.CircleMarker | L.Marker | null>(null)
   // routesの最新値をmousemoveクロージャから参照するためのref
   const routesRef = useRef(routes)
   useEffect(() => { routesRef.current = routes }, [routes])
+
+  // パネルからのマップコマンド（fitBounds / panTo）
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !command) return
+    if (command.type === 'fitBounds' && command.latlngs.length >= 2) {
+      const bounds = L.latLngBounds(command.latlngs.map(p => [p.lat, p.lng] as [number, number]))
+      map.fitBounds(bounds, { padding: [30, 30] })
+    } else if (command.type === 'panTo') {
+      map.setView([command.latlng.lat, command.latlng.lng], Math.max(map.getZoom(), 15))
+    }
+  }, [command])
 
   // 地図初期化
   useEffect(() => {
