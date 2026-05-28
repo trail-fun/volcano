@@ -161,13 +161,17 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
       }
     }
 
+    const goalIds = dimmed ? new Set(candidates.map(c => c.exitPointId)) : null
+
     for (const pt of points) {
+      const isGoal = goalIds?.has(pt.id) ?? false
+      const opacity = !pt.enabled ? 0.35 : (dimmed && !isGoal) ? 0.3 : 1
       const icon = L.divIcon({
-        html: `<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));opacity:${!pt.enabled ? 0.35 : dimmed ? 0.3 : 1}">${POINT_ICONS[pt.type]}</div>`,
+        html: `<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));opacity:${opacity}">${POINT_ICONS[pt.type]}</div>`,
         iconSize: [28, 28], iconAnchor: [14, 14], className: '',
       })
       const marker = L.marker([pt.lat, pt.lng], { icon }).addTo(map)
-      if (!dimmed) marker.bindPopup(`<b>${pt.name}</b><br><span style="font-size:11px">${pt.note || ''}</span>`)
+      if (!dimmed || isGoal) marker.bindPopup(`<b>${pt.name}</b><br><span style="font-size:11px">${pt.note || ''}</span>`)
       layersRef.current.push(marker)
     }
   }, [routes, points, position, candidates])
