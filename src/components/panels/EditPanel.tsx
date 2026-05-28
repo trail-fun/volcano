@@ -44,6 +44,14 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
   const [newPoint, setNewPoint] = useState<{ type: PointType; name: string; note: string; photos: string[] } | null>(null)
   const [editPointId, setEditPointId] = useState<string | null>(null)
+  // ルートスナップ確認ダイアログ
+  const [snapConfirm, setSnapConfirm] = useState<{
+    original: { lat: number; lng: number }
+    snapped: { lat: number; lng: number }
+    routeName: string; routeId: string; segmentIndex: number; ratio: number
+  } | null>(null)
+  const [pointPos, setPointPos] = useState<{ lat: number; lng: number } | null>(null)
+  const [insertingCoord, setInsertingCoord] = useState(false)
 
   // 区間設定ツール
   const [terrainStep, setTerrainStep] = useState<'start' | 'end' | null>(null)
@@ -113,8 +121,69 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
     setActiveTool('none')
   }
 
-  // ポイント追加ダイアログ（地図クリック後）
-  if (pendingLatLng && !newPoint && activeTool === 'add_point') {
+  // ポイント追加：地図クリック後にスナップチェック
+  useEffect(() => {
+    if (!pendingLatLng || activeTool !== 'add_point' || newPoint !== null || snapConfirm !== null) return
+    // 全ルートの中で最も近いスナップを探す（100m 以内）
+    let closest: { snap: { foot: { lat: number; lng: number }; segmentIndex: number; ratio: number }; route: Route } | null = null
+    for (const route of routes) {
+      if (route.coords.length < 2) continue
+      const snap = snapToRoute(pendingLatLng, route.coords, 100)
+      if (!snap) continue
+      if (!closest || haversine(pendingLatLng, snap.foot) < haversine(pendingLatLng, closest.snap.foot)) {
+        closest = { snap, route }
+      }
+    }
+    if (closest) {
+      setSnapConfirm({
+        original: pendingLatLng,
+        snapped: closest.snap.foot,
+        routeName: closest.route.name,
+        routeId: closest.route.id,
+        segmentIndex: closest.snap.segmentIndex,
+        ratio: closest.snap.ratio,
+      })
+    } else {
+      setPointPos(pendingLatLng)
+      setNewPoint({ type: 'exit', name: '', note: '', photos: [] })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLatLng])
+
+  const handleSnapYes = async () => {
+    if (!snapConfirm) return
+    const { snapped, routeId, segmentIndex, ratio } = snapConfirm
+    setPointPos(snapped)
+    // 足点が既存頂点から離れている場合（ratio が端でない）は GPX に新頂点を挿入
+    if (ratio > 0.05 && ratio < 0.95) {
+      setInsertingCoord(true)
+      const route = routes.find(r => r.id === routeId)
+      if (route) {
+        const ele = await fetchElevation(snapped.lat, snapped.lng)
+        const insertAt = segmentIndex + 1
+        const newCoord: LatLngEle = { lat: snapped.lat, lng: snapped.lng, ele }
+        const newCoords = [...route.coords.slice(0, insertAt), newCoord, ...route.coords.slice(insertAt)]
+        // terrain 区間・junction の座標インデックスをずらす
+        const newSegments = route.segments.map(s => ({
+          ...s,
+          startIndex: s.startIndex >= insertAt ? s.startIndex + 1 : s.startIndex,
+          endIndex:   s.endIndex   >= insertAt ? s.endIndex   + 1 : s.endIndex,
+        }))
+        const newJunction = route.junction && route.junction.segmentIndex >= segmentIndex
+          ? { ...route.junction, segmentIndex: route.junction.segmentIndex + 1 }
+          : route.junction
+        updateRoute(routeId, { coords: newCoords, segments: newSegments, junction: newJunction })
+      }
+      setInsertingCoord(false)
+    }
+    setSnapConfirm(null)
+    setNewPoint({ type: 'exit', name: '', note: '', photos: [] })
+  }
+
+  const handleSnapNo = () => {
+    if (!snapConfirm) return
+    setPointPos(snapConfirm.original)
+    setSnapConfirm(null)
     setNewPoint({ type: 'exit', name: '', note: '', photos: [] })
   }
 
@@ -187,12 +256,10 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   }
 
   const saveNewPoint = () => {
-    if (!newPoint || !pendingLatLng) return
-    addPoint({
-      id: crypto.randomUUID(), lat: pendingLatLng.lat, lng: pendingLatLng.lng,
-      ...newPoint, enabled: true,
-    })
+    if (!newPoint || !pointPos) return
+    addPoint({ id: crypto.randomUUID(), lat: pointPos.lat, lng: pointPos.lng, ...newPoint, enabled: true })
     setNewPoint(null)
+    setPointPos(null)
     clearPending()
     setActiveTool('none')
   }
@@ -439,12 +506,40 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         💾 ZIPで保存
       </button>
 
+      {/* ルートスナップ確認ダイアログ */}
+      {snapConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-4">
+            <div className="font-bold text-gray-800">ルート上にポイントを追加しますか？</div>
+            <div className="text-xs text-gray-500">
+              近くに「{snapConfirm.routeName}」があります。ルート上の最近傍位置に追加しますか？
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSnapYes}
+                disabled={insertingCoord}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition">
+                {insertingCoord ? '処理中…' : 'ルート上に追加'}
+              </button>
+              <button
+                onClick={handleSnapNo}
+                disabled={insertingCoord}
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold transition">
+                そのまま追加
+              </button>
+            </div>
+            <button onClick={() => { setSnapConfirm(null); clearPending() }}
+              className="text-xs text-gray-400 hover:text-gray-600 text-center">キャンセル</button>
+          </div>
+        </div>
+      )}
+
       {/* ポイント追加ダイアログ */}
-      {newPoint && pendingLatLng && (
+      {newPoint && pointPos && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-2xl p-6 w-80 flex flex-col gap-3 max-h-[90vh] overflow-y-auto">
               <div className="font-bold text-gray-800">ポイントを追加</div>
-              <div className="text-xs text-gray-500">位置: {pendingLatLng.lat.toFixed(5)}, {pendingLatLng.lng.toFixed(5)}</div>
+              <div className="text-xs text-gray-500">位置: {pointPos.lat.toFixed(5)}, {pointPos.lng.toFixed(5)}</div>
               <select className="border rounded px-2 py-1 text-sm"
                 value={newPoint.type} onChange={e => setNewPoint({ ...newPoint, type: e.target.value as PointType })}>
                 {(Object.keys(POINT_LABELS) as PointType[]).map(t => (
@@ -474,7 +569,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                 )}
               </div>
               <div className="flex gap-2 justify-end">
-                <button onClick={() => { setNewPoint(null); clearPending() }} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+                <button onClick={() => { setNewPoint(null); setPointPos(null); clearPending() }} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
                 <button onClick={saveNewPoint} disabled={!newPoint.name.trim()}
                   className="text-sm px-4 py-1.5 bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-40">追加</button>
               </div>
