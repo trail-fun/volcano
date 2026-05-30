@@ -1,7 +1,7 @@
 export type LatLng = { lat: number; lng: number }
 export type LatLngEle = LatLng & { ele: number }
 
-export type PointType = 'exit' | 'helipad' | 'aid' | 'parking' | 'danger' | 'closure' | 'gate' | 'custom'
+export type PointType = 'exit' | 'helipad' | 'aid' | 'parking' | 'danger' | 'closure' | 'gate' | 'water' | 'vending' | 'food' | 'hut' | 'toilet' | 'custom'
 
 export type Point = {
   id: string

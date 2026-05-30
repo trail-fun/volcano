@@ -9,6 +9,11 @@ export const POINT_ICONS: Record<PointType, string> = {
   danger: '⚠️',
   closure: '🚫',
   gate: '🔑',
+  water: '💧',
+  vending: '🥤',
+  food: '🍽️',
+  hut: '🛖',
+  toilet: '🚻',
   custom: '📍',
 }
 

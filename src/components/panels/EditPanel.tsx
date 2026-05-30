@@ -9,7 +9,8 @@ import type { PointType, Route, Terrain, Segment, LatLngEle } from '../../types/
 import { POINT_ICONS } from '../map/mapStyles'
 
 const POINT_LABELS: Record<PointType, string> = {
-  exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所', closure: '通行止め', gate: '鍵', custom: 'カスタム',
+  exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所',
+  closure: '通行止め', gate: '鍵', water: '水場', vending: '自販機', food: '食事', hut: '小屋', toilet: 'トイレ', custom: 'カスタム',
 }
 
 type EffectiveSeg = { startIndex: number; endIndex: number; terrain: Terrain; name: string; storedIndex: number | null }
