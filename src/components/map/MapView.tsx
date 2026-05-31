@@ -7,61 +7,9 @@ import { useCasualtyStore } from '../../store/casualtyStore'
 import { useDrawingStore } from '../../store/drawingStore'
 import { useMapStore } from '../../store/mapStore'
 import { calcCandidates } from '../../hooks/useRouteCalc'
-import { POINT_ICONS, ROUTE_STYLES, TERRAIN_STYLES, CANDIDATE_COLORS } from './mapStyles'
+import { POINT_ICONS, ROUTE_STYLES, CANDIDATE_COLORS } from './mapStyles'
 import { snapToRoute } from '../../utils/geo'
-import type { Segment, LatLngEle } from '../../types/race'
-
-// segMap[i] = terrain of edge coords[i]→coords[i+1]
-// seg.startIndex/endIndex are coord indices: road spans coords[start]→coords[end]
-// so edges start..(end-1) are road
-function buildSegMap(coords: LatLngEle[], segments: Segment[]): ('trail' | 'road')[] {
-  const n = coords.length - 1
-  const segMap: ('trail' | 'road')[] = new Array(n).fill('trail')
-  for (const seg of segments) {
-    for (let i = seg.startIndex; i < Math.min(seg.endIndex, n); i++) segMap[i] = seg.terrain
-  }
-  return segMap
-}
-
-// コースを terrain 種別ごとのランに分割
-function getTerrainRuns(coords: LatLngEle[], segments: Segment[]) {
-  if (coords.length < 2) return [{ terrain: 'trail' as const, coords }]
-  if (segments.length === 0) return [{ terrain: 'trail' as const, coords }]
-  const segMap = buildSegMap(coords, segments)
-  const n = segMap.length
-  const runs: { terrain: 'trail' | 'road'; coords: LatLngEle[] }[] = []
-  let cur = segMap[0], runStart = 0
-  for (let i = 1; i < n; i++) {
-    if (segMap[i] !== cur) {
-      runs.push({ terrain: cur, coords: coords.slice(runStart, i + 1) })
-      cur = segMap[i]; runStart = i
-    }
-  }
-  runs.push({ terrain: cur, coords: coords.slice(runStart) })
-  return runs
-}
-
-// 候補範囲内のトレイル区間のみ座標配列として返す
-function getTrailSlices(coords: LatLngEle[], segments: Segment[], lo: number, hi: number): LatLngEle[][] {
-  if (segments.length === 0) {
-    const s = coords.slice(lo, hi + 1)
-    return s.length >= 2 ? [s] : []
-  }
-  const segMap = buildSegMap(coords, segments)
-  const result: LatLngEle[][] = []
-  let cur: LatLngEle[] = []
-  for (let i = lo; i < hi; i++) {  // iterate edges lo..hi-1
-    if (segMap[i] === 'trail') {
-      if (cur.length === 0) cur.push(coords[i])
-      cur.push(coords[i + 1])
-    } else {
-      if (cur.length >= 2) result.push([...cur])
-      cur = []
-    }
-  }
-  if (cur.length >= 2) result.push(cur)
-  return result
-}
+import type {} from '../../types/race'
 
 const GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'
 
@@ -81,11 +29,9 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
   const drawingLayersRef = useRef<L.Layer[]>([])
   const vertexLayersRef = useRef<L.Layer[]>([])
   const snapPreviewRef = useRef<L.CircleMarker | L.Marker | null>(null)
-  // routesの最新値をmousemoveクロージャから参照するためのref
   const routesRef = useRef(routes)
   useEffect(() => { routesRef.current = routes }, [routes])
 
-  // パネルからのマップコマンド（fitBounds / panTo）
   useEffect(() => {
     const map = mapRef.current
     if (!map || !command) return
@@ -97,7 +43,6 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     }
   }, [command])
 
-  // 地図初期化
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return
     const map = L.map(containerRef.current, { zoomControl: true }).setView([35.7, 137.5], 10)
@@ -106,7 +51,6 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     return () => { map.remove(); mapRef.current = null }
   }, [])
 
-  // 地図クリック
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -115,7 +59,7 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         const { lat, lng } = e.latlng
         const newCandidates = calcCandidates({ lat, lng }, routes, points)
         setPosition({ lat, lng }, newCandidates)
-      } else if (activeTool === 'add_point' || activeTool === 'set_segment' || activeTool === 'set_junction') {
+      } else if (activeTool === 'add_point' || activeTool === 'set_junction') {
         onMapClick?.(e.latlng.lat, e.latlng.lng)
       } else if (activeTool === 'draw_route') {
         addDrawingPoint({ lat: e.latlng.lat, lng: e.latlng.lng })
@@ -125,7 +69,6 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     return () => { map.off('click', handler) }
   }, [mode, activeTool, routes, points, onMapClick, setPosition])
 
-  // メインコース読み込み時にfitBounds
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -137,57 +80,57 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     map.fitBounds(bounds, { padding: [20, 20] })
   }, [routes])
 
-  // ルート・ポイント描画
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
     layersRef.current.forEach(l => l.remove())
     layersRef.current = []
 
-    // 候補表示中はベースルートを薄くして候補ラインを目立たせる
     const dimmed = position !== null && candidates.length > 0
     const baseOpacity = dimmed ? 0.2 : 1.0
 
     for (const route of routes) {
       if (route.coords.length < 2) continue
+      const latlngs = route.coords.map(c => [c.lat, c.lng] as [number, number])
+      const style = { ...ROUTE_STYLES[route.type], opacity: ROUTE_STYLES[route.type].opacity! * baseOpacity }
+      const line = L.polyline(latlngs, style).addTo(map)
+      if (!dimmed) line.bindTooltip(route.name, { sticky: true })
+      layersRef.current.push(line)
 
-      if (route.type === 'course') {
-        for (const run of getTerrainRuns(route.coords, route.segments)) {
-          const style = { ...TERRAIN_STYLES[run.terrain], opacity: TERRAIN_STYLES[run.terrain].opacity! * baseOpacity }
-          const line = L.polyline(run.coords.map(c => [c.lat, c.lng] as [number, number]), style).addTo(map)
-          if (!dimmed) line.bindTooltip(`${route.name}（${run.terrain === 'trail' ? 'トレイル' : 'ロード'}）`, { sticky: true })
-          layersRef.current.push(line)
-        }
-      } else {
-        const latlngs = route.coords.map(c => [c.lat, c.lng] as [number, number])
-        const style = { ...ROUTE_STYLES[route.type], opacity: ROUTE_STYLES[route.type].opacity! * baseOpacity }
-        const line = L.polyline(latlngs, style).addTo(map)
-        if (!dimmed) line.bindTooltip(route.name, { sticky: true })
-        layersRef.current.push(line)
-
-        if (route.junction) {
-          const m = L.circleMarker([route.junction.lat, route.junction.lng], {
-            radius: 6, color: '#f59e0b', fillColor: '#fbbf24', fillOpacity: dimmed ? 0.2 : 1, weight: 2,
-          }).addTo(map)
-          if (!dimmed) m.bindTooltip(`分岐: ${route.name}`)
-          layersRef.current.push(m)
-        }
+      if (route.type !== 'course' && route.junction) {
+        const m = L.circleMarker([route.junction.lat, route.junction.lng], {
+          radius: 6, color: '#f59e0b', fillColor: '#fbbf24', fillOpacity: dimmed ? 0.2 : 1, weight: 2,
+        }).addTo(map)
+        if (!dimmed) m.bindTooltip(`分岐: ${route.name}`)
+        layersRef.current.push(m)
       }
     }
 
     for (const pt of points) {
       const opacity = !pt.enabled ? 0.35 : dimmed ? 0.3 : 1
-      const icon = L.divIcon({
-        html: `<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));opacity:${opacity}">${POINT_ICONS[pt.type]}</div>`,
-        iconSize: [28, 28], iconAnchor: [14, 14], className: '',
-      })
-      const marker = L.marker([pt.lat, pt.lng], { icon }).addTo(map)
-      if (!dimmed) marker.bindPopup(`<b>${pt.name}</b><br><span style="font-size:11px">${pt.note || ''}</span>`)
-      layersRef.current.push(marker)
+      if (pt.type === 'location') {
+        const m = L.circleMarker([pt.lat, pt.lng], {
+          radius: 10,
+          color: '#dc2626',
+          fillColor: 'white',
+          fillOpacity: 1,
+          weight: 3,
+          opacity,
+        }).addTo(map)
+        if (!dimmed) m.bindPopup(`<b>${pt.name}</b>${pt.cp ? ' <span style="color:#dc2626;font-size:10px">CP</span>' : ''}<br><span style="font-size:11px">${pt.note || ''}</span>`)
+        layersRef.current.push(m)
+      } else {
+        const icon = L.divIcon({
+          html: `<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));opacity:${opacity}">${POINT_ICONS[pt.type]}</div>`,
+          iconSize: [28, 28], iconAnchor: [14, 14], className: '',
+        })
+        const marker = L.marker([pt.lat, pt.lng], { icon }).addTo(map)
+        if (!dimmed) marker.bindPopup(`<b>${pt.name}</b><br><span style="font-size:11px">${pt.note || ''}</span>`)
+        layersRef.current.push(marker)
+      }
     }
   }, [routes, points, position, candidates])
 
-  // 傷病者マーカー
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -202,7 +145,6 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     casualtyMarkerRef.current = m
   }, [position])
 
-  // 全候補ライン（色分け・選択中は太く前面）
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -210,7 +152,6 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     candidateLayersRef.current = []
     if (!position || candidates.length === 0) return
 
-    // 非選択を先に描画し、選択中を最後（前面）に
     const ordered = [
       ...candidates.map((c, i) => ({ c, i })).filter(({ c }) => c.id !== selectedCandidateId),
       ...candidates.map((c, i) => ({ c, i })).filter(({ c }) => c.id === selectedCandidateId),
@@ -224,19 +165,16 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         if (!route) continue
         const lo = Math.min(seg.fromIndex, seg.toIndex)
         const hi = Math.max(seg.fromIndex, seg.toIndex)
-        // トレイル区間のみ表示
-        const slices = getTrailSlices(route.coords, route.segments, lo, hi)
-        for (const slice of slices) {
-          const line = L.polyline(slice.map(c => [c.lat, c.lng] as [number, number]), {
-            color, weight: isSelected ? 7 : 4, opacity: isSelected ? 1.0 : 0.55,
-          }).addTo(map)
-          candidateLayersRef.current.push(line)
-        }
+        const slice = route.coords.slice(lo, hi + 1)
+        if (slice.length < 2) continue
+        const line = L.polyline(slice.map(c => [c.lat, c.lng] as [number, number]), {
+          color, weight: isSelected ? 7 : 4, opacity: isSelected ? 1.0 : 0.55,
+        }).addTo(map)
+        candidateLayersRef.current.push(line)
       }
     }
   }, [candidates, selectedCandidateId, routes, position])
 
-  // 頂点マーカー（編集モードのみ、ドラッグで座標更新）
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -265,13 +203,11 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     }
   }, [routes, mode])
 
-  // スナッププレビュー（set_segment / set_junction / add_point）
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
-    // 対象外ツールはプレビュー削除して終了
-    const snapTools = activeTool === 'set_segment' || activeTool === 'set_junction'
+    const snapTools = activeTool === 'set_junction'
     const pinTool = activeTool === 'add_point'
     if (!snapTools && !pinTool) {
       snapPreviewRef.current?.remove()
@@ -279,7 +215,6 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
       return
     }
 
-    // マーカーを1つ生成して使い回す
     const marker = snapTools
       ? L.circleMarker([0, 0], { radius: 8, color: '#f97316', fillColor: '#fb923c', fillOpacity: 0.9, weight: 3 })
       : L.marker([0, 0], {
@@ -293,20 +228,9 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
       if (snapTools) {
         const mainRoute = routesRef.current.find(r => r.type === 'course')
         if (!mainRoute) return
-        const maxDist = activeTool === 'set_junction' ? 5000 : 100
-        const snap = snapToRoute(e.latlng, mainRoute.coords, maxDist)
+        const snap = snapToRoute(e.latlng, mainRoute.coords, 5000)
         if (snap) {
-          let lat: number, lng: number
-          if (activeTool === 'set_segment') {
-            // 最近傍の座標点に丸めてプレビュー（EditPanelの保存ロジックと一致させる）
-            const ni = snap.ratio >= 0.5
-              ? Math.min(snap.segmentIndex + 1, mainRoute.coords.length - 1)
-              : snap.segmentIndex
-            ;({ lat, lng } = mainRoute.coords[ni])
-          } else {
-            ;({ lat, lng } = snap.foot)
-          }
-          marker.setLatLng([lat, lng])
+          marker.setLatLng([snap.foot.lat, snap.foot.lng])
           if (!map.hasLayer(marker)) marker.addTo(map)
         } else {
           marker.remove()
@@ -330,7 +254,6 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     }
   }, [activeTool])
 
-  // 手描きプレビュー
   useEffect(() => {
     const map = mapRef.current
     if (!map) return

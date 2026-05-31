@@ -19,9 +19,9 @@ export default function StartScreen() {
     <div className="fixed inset-0 bg-gradient-to-b from-green-900 to-green-950 flex items-center justify-center">
       <div className="bg-white rounded-2xl shadow-2xl p-10 flex flex-col items-center gap-8 w-full max-w-sm mx-4">
         <div className="text-center">
-          <div className="text-5xl mb-3">🏔️</div>
-          <h1 className="text-2xl font-bold text-green-900">トレラン救護支援</h1>
-          <p className="text-sm text-gray-500 mt-1">搬送ルート判断支援ツール</p>
+          <div className="text-5xl mb-3">🌋</div>
+          <h1 className="text-2xl font-bold text-green-900">VOLCANO</h1>
+          <p className="text-sm text-gray-500 mt-1">レースプラン作成補助</p>
         </div>
 
         <div className="flex flex-col gap-4 w-full">

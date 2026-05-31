@@ -1,7 +1,7 @@
 export type LatLng = { lat: number; lng: number }
 export type LatLngEle = LatLng & { ele: number }
 
-export type PointType = 'exit' | 'helipad' | 'aid' | 'parking' | 'danger' | 'closure' | 'gate' | 'water' | 'vending' | 'food' | 'hut' | 'toilet' | 'custom'
+export type PointType = 'exit' | 'helipad' | 'aid' | 'parking' | 'danger' | 'closure' | 'gate' | 'water' | 'vending' | 'food' | 'hut' | 'toilet' | 'location' | 'custom'
 
 export type Point = {
   id: string
@@ -11,16 +11,15 @@ export type Point = {
   lng: number
   note: string
   enabled: boolean
-  photos: string[] // data URLs
+  cp: boolean
+  photos: string[]
 }
-
-export type Terrain = 'trail' | 'road'
 
 export type Segment = {
   startIndex: number
   endIndex: number
-  terrain: Terrain
   name: string
+  courseTime: string  // hh:mm
 }
 
 export type Junction = {

@@ -54,14 +54,22 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
       id: 'r_main', name: 'メインコース', type: 'course',
       gpxFile: 'course_main.gpx', coords,
       difficulty: 'medium', transportSuitability: ['walk', 'stretcher'],
-      segments: [], junction: null,
+      segments: coords.length >= 2
+        ? [{ startIndex: 0, endIndex: coords.length - 1, name: '', courseTime: '' }]
+        : [],
+      junction: null,
     }
     set({ race, routes: [route], points: [], history: [] })
   },
 
   loadFromZip: async (file) => {
     const data = await importZip(file)
-    set({ race: data.race, routes: data.routes, points: data.points, history: [] })
+    set({
+      race: data.race,
+      routes: data.routes,
+      points: data.points.map((p: Point) => ({ ...p, cp: p.cp ?? false })),
+      history: [],
+    })
   },
 
   exportToZip: async () => {

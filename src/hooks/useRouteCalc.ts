@@ -1,20 +1,6 @@
 import { snapToRoute, haversine, elevationStats, interpolateEle } from '../utils/geo'
 import type { LatLng, Route, Point, LatLngEle } from '../types/race'
-import type { RouteCandidate, CandidateSegment } from '../types/candidate'
-
-function hasRoadSection(routes: Route[], segs: CandidateSegment[]): boolean {
-  for (const seg of segs) {
-    const route = routes.find(r => r.id === seg.routeId)
-    if (!route || route.segments.length === 0) continue
-    const lo = Math.min(seg.fromIndex, seg.toIndex)
-    const hi = Math.max(seg.fromIndex, seg.toIndex)
-    for (const ts of route.segments) {
-      // candidate covers edges lo..hi-1; road segment covers edges startIndex..endIndex-1
-      if (ts.terrain === 'road' && ts.startIndex < hi && ts.endIndex > lo) return true
-    }
-  }
-  return false
-}
+import type { RouteCandidate } from '../types/candidate'
 
 function sliceCoords(coords: LatLngEle[], fromIdx: number, fromRatio: number, toIdx: number, toRatio: number): LatLngEle[] {
   const from: LatLngEle = {
@@ -49,13 +35,9 @@ export function calcCandidates(
   const coords = mainRoute.coords
   const candidates: RouteCandidate[] = []
 
-  // ── メインコース上のゴール地点（進行・引き返し） ──
   for (const goal of goals) {
     const rawGoalSnap = snapToRoute(goal, coords)
     if (!rawGoalSnap) continue
-    // Snap to nearest coordinate index so terrain boundary comparisons work correctly.
-    // A goal at coords[k] (end of road edge k-1 / start of trail edge k) must resolve to
-    // coordinate k, not segment k-1, to avoid false hasRoadSection positives.
     const goalCoordIdx = rawGoalSnap.ratio >= 0.5
       ? Math.min(rawGoalSnap.segmentIndex + 1, coords.length - 1)
       : rawGoalSnap.segmentIndex
@@ -91,17 +73,13 @@ export function calcCandidates(
     })
   }
 
-  // ── エスケープルート経由 ──
   const escapeRoutes = routes.filter(r => r.type === 'escape' && r.junction && r.coords.length > 1)
   for (const esc of escapeRoutes) {
     const junc = esc.junction!
     const juncSnap = snapToRoute(junc, coords)
     if (!juncSnap) continue
 
-    const escGoals = goals.filter(g => {
-      const gs = snapToRoute(g, esc.coords)
-      return gs !== null
-    })
+    const escGoals = goals.filter(g => snapToRoute(g, esc.coords) !== null)
 
     for (const goal of escGoals) {
       const goalSnap = snapToRoute(goal, esc.coords)
@@ -149,7 +127,5 @@ export function calcCandidates(
     }
   }
 
-  return candidates
-    .filter(c => !hasRoadSection(routes, c.segments))
-    .sort((a, b) => a.totalDistanceM - b.totalDistanceM)
+  return candidates.sort((a, b) => a.totalDistanceM - b.totalDistanceM)
 }

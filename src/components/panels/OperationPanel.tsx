@@ -6,22 +6,12 @@ import { calcCandidates } from '../../hooks/useRouteCalc'
 import { haversine, snapToRoute } from '../../utils/geo'
 import { POINT_ICONS, CANDIDATE_COLORS } from '../map/mapStyles'
 import type { RouteCandidate } from '../../types/candidate'
-import type { Point, Terrain, Segment } from '../../types/race'
+import type { Point, Segment } from '../../types/race'
 
-function computeEffectiveSegments(segments: Segment[], coordCount: number): { startIndex: number; endIndex: number; terrain: Terrain; name: string }[] {
+function getDisplaySegments(segments: Segment[], coordCount: number): Segment[] {
+  if (segments.length > 0) return segments
   if (coordCount < 2) return []
-  const n = coordCount - 1
-  if (segments.length === 0) return [{ startIndex: 0, endIndex: n, terrain: 'trail', name: 'トレイル' }]
-  const sorted = [...segments].sort((a, b) => a.startIndex - b.startIndex)
-  const result: { startIndex: number; endIndex: number; terrain: Terrain; name: string }[] = []
-  let cur = 0
-  for (const seg of sorted) {
-    if (seg.startIndex > cur) result.push({ startIndex: cur, endIndex: seg.startIndex, terrain: 'trail', name: 'トレイル' })
-    result.push({ startIndex: seg.startIndex, endIndex: seg.endIndex, terrain: seg.terrain, name: seg.name })
-    cur = seg.endIndex
-  }
-  if (cur < n) result.push({ startIndex: cur, endIndex: n, terrain: 'trail', name: 'トレイル' })
-  return result
+  return [{ startIndex: 0, endIndex: coordCount - 1, name: 'コース全体', courseTime: '' }]
 }
 
 // ─── 比較高低図モーダル ──────────────────────────────────────────────────────
@@ -323,11 +313,11 @@ export default function OperationPanel() {
 
       <hr className="border-gray-200" />
 
-      {/* トレイル/ロード区間 */}
+      {/* 区間 */}
       {mainRoute && (
         <section>
-          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ トレイル/ロード区間</div>
-          {computeEffectiveSegments(mainRoute.segments, mainRoute.coords.length).map((seg, i) => (
+          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ 区間</div>
+          {getDisplaySegments(mainRoute.segments, mainRoute.coords.length).map((seg, i) => (
             <div
               key={i}
               className="flex items-center gap-1 py-0.5 text-xs cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
@@ -337,10 +327,9 @@ export default function OperationPanel() {
               }}
               title="クリックで地図に表示"
             >
-              <span className={seg.terrain === 'trail' ? 'text-green-600' : 'text-amber-500'}>
-                {seg.terrain === 'trail' ? '🌿' : '🚗'}
-              </span>
-              <span className="flex-1 text-gray-700">{seg.name}</span>
+              <span className="text-gray-500">—</span>
+              <span className="flex-1 text-gray-700">{seg.name || `区間 ${i + 1}`}</span>
+              {seg.courseTime && <span className="text-purple-600 font-mono">⏱ {seg.courseTime}</span>}
             </div>
           ))}
         </section>

@@ -4,33 +4,59 @@ import { useModeStore } from '../../store/modeStore'
 import { useDrawingStore } from '../../store/drawingStore'
 import { useMapStore } from '../../store/mapStore'
 import { parseGpx } from '../../utils/gpxParser'
-import { snapToRoute, fetchElevation, haversine } from '../../utils/geo'
-import type { PointType, Route, Terrain, Segment, LatLngEle } from '../../types/race'
+import { snapToRoute, fetchElevation, haversine, elevationStats } from '../../utils/geo'
+import type { PointType, Route, Segment, LatLngEle, Point } from '../../types/race'
 import { POINT_ICONS } from '../map/mapStyles'
 
 const POINT_LABELS: Record<PointType, string> = {
   exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所',
-  closure: '通行止め', gate: '鍵', water: '水場', vending: '自販機', food: '食事', hut: '小屋', toilet: 'トイレ', custom: 'カスタム',
+  closure: '通行止め', gate: '鍵', water: '水場', vending: '自販機', food: '食事', hut: '小屋', toilet: 'トイレ',
+  location: '地点', custom: 'カスタム',
 }
 
-type EffectiveSeg = { startIndex: number; endIndex: number; terrain: Terrain; name: string; storedIndex: number | null }
+// Auto-compute segments from 'location' type points snapped to the route
+function recomputeSegmentsForRoute(route: Route, allPoints: Point[]): Segment[] {
+  const coords = route.coords
+  if (coords.length < 2) return []
+  const n = coords.length - 1
 
-function computeEffectiveSegments(segments: Segment[], coordCount: number): EffectiveSeg[] {
-  if (coordCount < 2) return []
-  const n = coordCount - 1  // number of edges; coord range is [0, n]
-  if (segments.length === 0) return [{ startIndex: 0, endIndex: n, terrain: 'trail', name: 'トレイル', storedIndex: null }]
-  const sorted = segments
-    .map((s, i) => ({ ...s, storedIndex: i }))
-    .sort((a, b) => a.startIndex - b.startIndex)
-  const result: EffectiveSeg[] = []
-  let cur = 0
-  for (const seg of sorted) {
-    if (seg.startIndex > cur) result.push({ startIndex: cur, endIndex: seg.startIndex, terrain: 'trail', name: 'トレイル', storedIndex: null })
-    result.push({ startIndex: seg.startIndex, endIndex: seg.endIndex, terrain: seg.terrain, name: seg.name, storedIndex: seg.storedIndex })
-    cur = seg.endIndex
-  }
-  if (cur < n) result.push({ startIndex: cur, endIndex: n, terrain: 'trail', name: 'トレイル', storedIndex: null })
-  return result
+  const locationIdxs = allPoints
+    .filter(p => p.type === 'location')
+    .flatMap(p => {
+      const snap = snapToRoute(p, coords, 100)
+      if (!snap) return []
+      const idx = snap.ratio >= 0.5
+        ? Math.min(snap.segmentIndex + 1, coords.length - 1)
+        : snap.segmentIndex
+      return idx > 0 && idx < coords.length - 1 ? [idx] : []
+    })
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .sort((a, b) => a - b)
+
+  const boundaries = [0, ...locationIdxs, n]
+
+  return boundaries.slice(0, -1).map((start, i) => {
+    const end = boundaries[i + 1]
+    const existing = route.segments.find(s => s.startIndex === start && s.endIndex === end)
+    return {
+      startIndex: start,
+      endIndex: end,
+      name: existing?.name ?? '',
+      courseTime: existing?.courseTime ?? '',
+    }
+  })
+}
+
+function parseTime(t: string): number {
+  if (!t) return 0
+  const parts = t.split(':').map(Number)
+  return (parts[0] || 0) * 60 + (parts[1] || 0)
+}
+
+function formatTime(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${h}:${String(m).padStart(2, '0')}`
 }
 
 type Props = { pendingLatLng: { lat: number; lng: number } | null; clearPending: () => void }
@@ -45,15 +71,14 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const newPointPhotoRef = useRef<HTMLInputElement>(null)
   const editPointPhotoRef = useRef<HTMLInputElement>(null)
 
-  const [newPoint, setNewPoint] = useState<{ type: PointType; name: string; note: string; photos: string[] } | null>(null)
+  const [newPoint, setNewPoint] = useState<{ type: PointType; name: string; note: string; cp: boolean; photos: string[] } | null>(null)
   const [editPointId, setEditPointId] = useState<string | null>(null)
-  // ルート・区間の名前編集ダイアログ
   const [editRouteId, setEditRouteId] = useState<string | null>(null)
   const [editRouteName, setEditRouteName] = useState('')
   const [editSegmentIdx, setEditSegmentIdx] = useState<number | null>(null)
   const [editSegmentName, setEditSegmentName] = useState('')
-  const [editImplicitSeg, setEditImplicitSeg] = useState<{ startIndex: number; endIndex: number } | null>(null)
-  // ルートスナップ確認ダイアログ
+  const [editCourseTime, setEditCourseTime] = useState('')
+
   const [snapConfirm, setSnapConfirm] = useState<{
     original: { lat: number; lng: number }
     snapped: { lat: number; lng: number }
@@ -62,19 +87,12 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [pointPos, setPointPos] = useState<{ lat: number; lng: number } | null>(null)
   const [insertingCoord, setInsertingCoord] = useState(false)
 
-  // 区間設定ツール
-  const [terrainStep, setTerrainStep] = useState<'start' | 'end' | null>(null)
-  const terrainStartIdxRef = useRef<number | null>(null)
-  const [terrainDialogIndices, setTerrainDialogIndices] = useState<{ si: number; ei: number } | null>(null)
-
-  // 分岐点設定ツール
   const [junctionRouteId, setJunctionRouteId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!pendingLatLng || activeTool !== 'set_junction' || !junctionRouteId) return
     const mainRoute = routes.find(r => r.type === 'course')
     if (!mainRoute) { clearPending(); return }
-    // 分岐点設定はズームに依らず確実にスナップできるよう閾値を広げる
     const snap = snapToRoute(pendingLatLng, mainRoute.coords, 5000)
     if (!snap) { clearPending(); return }
     setJunction(junctionRouteId, {
@@ -91,7 +109,6 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingLatLng])
 
-  // 手描きツール
   const [drawingName, setDrawingName] = useState('')
   const [fetchingEle, setFetchingEle] = useState(false)
 
@@ -130,10 +147,8 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
     setActiveTool('none')
   }
 
-  // ポイント追加：地図クリック後にスナップチェック
   useEffect(() => {
     if (!pendingLatLng || activeTool !== 'add_point' || newPoint !== null || snapConfirm !== null) return
-    // 全ルートの中で最も近いスナップを探す（100m 以内）
     let closest: { snap: { foot: { lat: number; lng: number }; segmentIndex: number; ratio: number }; route: Route } | null = null
     for (const route of routes) {
       if (route.coords.length < 2) continue
@@ -154,7 +169,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       })
     } else {
       setPointPos(pendingLatLng)
-      setNewPoint({ type: 'exit', name: '', note: '', photos: [] })
+      setNewPoint({ type: 'exit', name: '', note: '', cp: false, photos: [] })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingLatLng])
@@ -163,7 +178,6 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
     if (!snapConfirm) return
     const { snapped, routeId, segmentIndex, ratio } = snapConfirm
     setPointPos(snapped)
-    // 足点が既存頂点から離れている場合（ratio が端でない）は GPX に新頂点を挿入
     if (ratio > 0.05 && ratio < 0.95) {
       setInsertingCoord(true)
       const route = routes.find(r => r.id === routeId)
@@ -172,7 +186,6 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         const insertAt = segmentIndex + 1
         const newCoord: LatLngEle = { lat: snapped.lat, lng: snapped.lng, ele }
         const newCoords = [...route.coords.slice(0, insertAt), newCoord, ...route.coords.slice(insertAt)]
-        // terrain 区間・junction の座標インデックスをずらす
         const newSegments = route.segments.map(s => ({
           ...s,
           startIndex: s.startIndex >= insertAt ? s.startIndex + 1 : s.startIndex,
@@ -186,94 +199,70 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       setInsertingCoord(false)
     }
     setSnapConfirm(null)
-    setNewPoint({ type: 'exit', name: '', note: '', photos: [] })
+    setNewPoint({ type: 'exit', name: '', note: '', cp: false, photos: [] })
   }
 
   const handleSnapNo = () => {
     if (!snapConfirm) return
     setPointPos(snapConfirm.original)
     setSnapConfirm(null)
-    setNewPoint({ type: 'exit', name: '', note: '', photos: [] })
-  }
-
-  // 区間設定（地図クリック後）
-  useEffect(() => {
-    if (!pendingLatLng || activeTool !== 'set_segment') return
-    const mainRoute = routes.find(r => r.type === 'course')
-    if (!mainRoute) { clearPending(); return }
-    const snap = snapToRoute(pendingLatLng, mainRoute.coords)
-    if (!snap) { clearPending(); return }
-    // ratio >= 0.5 なら辺の終端座標、それ以外は始端座標に丸める
-    const idx = snap.ratio >= 0.5
-      ? Math.min(snap.segmentIndex + 1, mainRoute.coords.length - 1)
-      : snap.segmentIndex
-    if (terrainStep === 'start') {
-      terrainStartIdxRef.current = idx
-      setTerrainStep('end')
-      clearPending()
-    } else if (terrainStep === 'end') {
-      const si = Math.min(terrainStartIdxRef.current!, idx)
-      const ei = Math.max(terrainStartIdxRef.current!, idx)
-      setTerrainDialogIndices({ si, ei })
-      setTerrainStep(null)
-      terrainStartIdxRef.current = null
-      clearPending()
-      setActiveTool('none')
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingLatLng])
-
-  const saveTerrainSegment = (terrain: Terrain) => {
-    const mainRoute = routes.find(r => r.type === 'course')
-    if (!mainRoute || !terrainDialogIndices) return
-    const { si, ei } = terrainDialogIndices
-    const newSeg: Segment = { startIndex: si, endIndex: ei, terrain, name: terrain === 'trail' ? 'トレイル' : 'ロード' }
-    const filtered = mainRoute.segments.filter(s => s.endIndex < si || s.startIndex > ei)
-    const allSegs = [...filtered, newSeg]
-    updateRoute(mainRoute.id, { segments: allSegs })
-
-    // トレイル/ロード境界に自動で下山口ポイントを作成
-    // segMap[i] = terrain of edge coords[i]→coords[i+1]; boundary point is coords[i] when segMap[i] != segMap[i-1]
-    const coords = mainRoute.coords
-    const n = coords.length - 1
-    const segMap: Terrain[] = new Array(n).fill('trail')
-    for (const s of allSegs) {
-      for (let i = s.startIndex; i < Math.min(s.endIndex, n); i++) segMap[i] = s.terrain
-    }
-    for (let i = 1; i < n; i++) {
-      if (segMap[i] !== segMap[i - 1]) {
-        const coord = coords[i]
-        const nearby = points.some(p =>
-          (p.type === 'exit' || p.type === 'helipad') &&
-          haversine({ lat: p.lat, lng: p.lng }, coord) < 200
-        )
-        if (!nearby) {
-          addPoint({
-            id: crypto.randomUUID(), lat: coord.lat, lng: coord.lng,
-            type: 'exit', name: '下山口（自動）', note: 'トレイル/ロード境界', enabled: true, photos: [],
-          })
-        }
-      }
-    }
-    setTerrainDialogIndices(null)
-  }
-
-  const deleteTerrainSegment = (idx: number) => {
-    const mainRoute = routes.find(r => r.type === 'course')
-    if (!mainRoute) return
-    updateRoute(mainRoute.id, { segments: mainRoute.segments.filter((_, i) => i !== idx) })
+    setNewPoint({ type: 'exit', name: '', note: '', cp: false, photos: [] })
   }
 
   const saveNewPoint = () => {
     if (!newPoint || !pointPos) return
-    addPoint({ id: crypto.randomUUID(), lat: pointPos.lat, lng: pointPos.lng, ...newPoint, enabled: true })
+    const point: Point = {
+      id: crypto.randomUUID(),
+      lat: pointPos.lat,
+      lng: pointPos.lng,
+      type: newPoint.type,
+      name: newPoint.name,
+      note: newPoint.note,
+      cp: newPoint.cp,
+      enabled: true,
+      photos: newPoint.photos,
+    }
+    const mainRoute = routes.find(r => r.type === 'course')
+    if (point.type === 'location' && mainRoute) {
+      const newPoints = [...points, point]
+      const newSegments = recomputeSegmentsForRoute(mainRoute, newPoints)
+      addPoint(point)
+      updateRoute(mainRoute.id, { segments: newSegments })
+    } else {
+      addPoint(point)
+    }
     setNewPoint(null)
     setPointPos(null)
     clearPending()
     setActiveTool('none')
   }
 
-  // 写真ハンドラ
+  const handleDeletePoint = (pointId: string) => {
+    const pt = points.find(p => p.id === pointId)
+    const mainRoute = routes.find(r => r.type === 'course')
+    if (pt?.type === 'location' && mainRoute) {
+      const newPoints = points.filter(p => p.id !== pointId)
+      const newSegments = recomputeSegmentsForRoute(mainRoute, newPoints)
+      deletePoint(pointId)
+      updateRoute(mainRoute.id, { segments: newSegments })
+    } else {
+      deletePoint(pointId)
+    }
+  }
+
+  const handleUpdatePointType = (id: string, type: PointType) => {
+    const pt = points.find(p => p.id === id)
+    const mainRoute = routes.find(r => r.type === 'course')
+    if (mainRoute && (pt?.type === 'location' || type === 'location')) {
+      const newPoints = points.map(p => p.id === id ? { ...p, type } : p)
+      const newSegments = recomputeSegmentsForRoute(mainRoute, newPoints)
+      updatePoint(id, { type })
+      updateRoute(mainRoute.id, { segments: newSegments })
+    } else {
+      updatePoint(id, { type })
+    }
+  }
+
   const readPhotos = (files: FileList): Promise<string[]> =>
     Promise.all(Array.from(files).map(f => new Promise<string>(res => {
       const reader = new FileReader()
@@ -328,6 +317,50 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   }
 
   const editPt = editPointId ? points.find(p => p.id === editPointId) : null
+  const mainRoute = routes.find(r => r.type === 'course')
+
+  // CP区間計算
+  const cpSection = (() => {
+    if (!mainRoute || mainRoute.coords.length < 2) return null
+    const coords = mainRoute.coords
+    const n = coords.length - 1
+
+    const cpPoints = points
+      .filter(p => p.type === 'location' && p.cp)
+      .map(p => {
+        const snap = snapToRoute(p, coords, 100)
+        if (!snap) return null
+        const idx = snap.ratio >= 0.5
+          ? Math.min(snap.segmentIndex + 1, coords.length - 1)
+          : snap.segmentIndex
+        return { name: p.name, coordIdx: idx }
+      })
+      .filter((x): x is { name: string; coordIdx: number } => x !== null)
+      .sort((a, b) => a.coordIdx - b.coordIdx)
+
+    const cpBounds = [
+      { name: 'スタート', coordIdx: 0 },
+      ...cpPoints,
+      { name: 'フィニッシュ', coordIdx: n },
+    ]
+
+    return cpBounds.slice(0, -1).map((from, i) => {
+      const to = cpBounds[i + 1]
+      const slice = coords.slice(from.coordIdx, to.coordIdx + 1)
+      let distM = 0
+      for (let j = 1; j < slice.length; j++) distM += haversine(slice[j - 1], slice[j])
+      const { descentM, ascentM } = elevationStats(slice)
+      const segsInInterval = mainRoute.segments.filter(
+        s => s.startIndex >= from.coordIdx && s.endIndex <= to.coordIdx
+      )
+      const totalMins = segsInInterval.reduce((sum, s) => sum + parseTime(s.courseTime), 0)
+      return {
+        fromName: from.name, toName: to.name,
+        distKm: distM / 1000, descentM, ascentM,
+        courseTime: totalMins > 0 ? formatTime(totalMins) : '',
+      }
+    })
+  })()
 
   return (
     <div className="flex flex-col gap-3 h-full overflow-y-auto">
@@ -356,7 +389,6 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       {/* ルート */}
       <section>
         <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ ルート</div>
-        {/* 分岐点設定中のヒント */}
         {junctionRouteId && activeTool === 'set_junction' && (
           <p className="text-xs text-amber-600 font-semibold mb-1">
             🟡 メインコース上をクリックして分岐点を設定
@@ -399,7 +431,6 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
           </div>
         ))}
 
-        {/* 手描き中UI */}
         {drawingRouteType && (
           <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-2 flex flex-col gap-1.5">
             <div className="text-xs font-semibold text-blue-700">
@@ -415,20 +446,13 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
               {drawingPoints.length} ポイント — 地図をタップして追加
             </div>
             <div className="flex gap-1 flex-wrap">
-              <button
-                onClick={removeLastPoint}
-                disabled={drawingPoints.length === 0}
-                className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-40"
-              >↩ 1点戻す</button>
-              <button
-                onClick={finishDrawing}
-                disabled={drawingPoints.length < 2 || fetchingEle}
-                className="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40"
-              >{fetchingEle ? '高度取得中…' : '✅ 完了'}</button>
-              <button
-                onClick={cancelDrawing}
-                className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600"
-              >✖ キャンセル</button>
+              <button onClick={removeLastPoint} disabled={drawingPoints.length === 0}
+                className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-40">↩ 1点戻す</button>
+              <button onClick={finishDrawing} disabled={drawingPoints.length < 2 || fetchingEle}
+                className="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40">
+                {fetchingEle ? '高度取得中…' : '✅ 完了'}</button>
+              <button onClick={cancelDrawing}
+                className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600">✖ キャンセル</button>
             </div>
           </div>
         )}
@@ -463,56 +487,64 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
       <hr className="border-gray-200" />
 
-      {/* トレイル/ロード区間設定 */}
-      {routes.find(r => r.type === 'course') && (() => {
-        const mainRoute = routes.find(r => r.type === 'course')!
-        return (
-          <section>
-            <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ トレイル/ロード区間</div>
-            {terrainStep === 'start' && (
-              <p className="text-xs text-blue-600 mb-1 font-semibold">📍 コース上をクリックして開始点を指定</p>
-            )}
-            {terrainStep === 'end' && (
-              <p className="text-xs text-blue-600 mb-1 font-semibold">📍 コース上をクリックして終了点を指定</p>
-            )}
-            <div className="flex gap-1 mb-2">
-              <button
-                onClick={() => { setTerrainStep('start'); setActiveTool('set_segment') }}
-                className={`text-xs px-2 py-1 rounded transition ${terrainStep ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-              >＋ 区間追加</button>
-              {terrainStep && (
-                <button onClick={() => { setTerrainStep(null); terrainStartIdxRef.current = null; setActiveTool('none') }}
-                  className="text-xs px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-600">キャンセル</button>
+      {/* 区間 */}
+      {mainRoute && (
+        <section>
+          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ 区間</div>
+          <p className="text-xs text-gray-400 mb-1">「地点」ポイントをルート上に追加すると区間が分割されます</p>
+          {(mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '' }]).map((seg, i) => (
+            <div key={i}
+              className="flex items-center gap-1 py-0.5 text-xs cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+              onClick={() => {
+                const sliced = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
+                if (sliced.length >= 2) fitBounds(sliced)
+              }}
+              title="クリック：地図に表示"
+            >
+              <span className="text-gray-500">—</span>
+              <span className="flex-1 text-gray-700">{seg.name || `区間 ${i + 1}`}</span>
+              {seg.courseTime && <span className="text-purple-600 font-mono">⏱ {seg.courseTime}</span>}
+              {i < mainRoute.segments.length && (
+                <button onClick={e => {
+                  e.stopPropagation()
+                  const idx = mainRoute.segments.indexOf(seg)
+                  if (idx >= 0) {
+                    setEditSegmentIdx(idx)
+                    setEditSegmentName(seg.name)
+                    setEditCourseTime(seg.courseTime)
+                  } else {
+                    // implicit segment (no location points): treat as index 0 in the stored array
+                    setEditSegmentIdx(0)
+                    setEditSegmentName(seg.name)
+                    setEditCourseTime(seg.courseTime)
+                  }
+                }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
               )}
             </div>
-            {computeEffectiveSegments(mainRoute.segments, mainRoute.coords.length).map((seg, i) => (
-              <div key={i}
-                className="flex items-center gap-1 py-0.5 text-xs cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
-                onClick={() => {
-                  const sliced = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
-                  if (sliced.length >= 2) fitBounds(sliced)
-                }}
-                title="クリック：地図に表示"
-              >
-                <span className={seg.terrain === 'trail' ? 'text-green-600' : 'text-amber-500'}>
-                  {seg.terrain === 'trail' ? '🌿' : '🚗'}
-                </span>
-                <span className={`flex-1 ${seg.storedIndex !== null ? 'text-gray-700' : 'text-gray-400'}`}>
-                  {seg.name}
-                </span>
-                {seg.storedIndex !== null ? (
-                  <>
-                    <button onClick={e => { e.stopPropagation(); setEditSegmentIdx(seg.storedIndex!); setEditSegmentName(mainRoute.segments[seg.storedIndex!].name) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
-                    <button onClick={e => { e.stopPropagation(); deleteTerrainSegment(seg.storedIndex!) }} className="text-gray-400 hover:text-red-500">🗑</button>
-                  </>
-                ) : (
-                  <button onClick={e => { e.stopPropagation(); setEditImplicitSeg({ startIndex: seg.startIndex, endIndex: seg.endIndex }); setEditSegmentName(seg.name) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
-                )}
+          ))}
+        </section>
+      )}
+
+      {/* CP区間 */}
+      {mainRoute && (
+        <section>
+          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ CP区間</div>
+          {(!cpSection || cpSection.length === 0) && (
+            <p className="text-xs text-gray-400">CP属性のある「地点」がありません</p>
+          )}
+          {cpSection && cpSection.length > 0 && cpSection.map((ci, i) => (
+            <div key={i} className="py-1 border-b last:border-0 border-gray-100">
+              <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
+                <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
+                {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
+                {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
+                {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
               </div>
-            ))}
-          </section>
-        )
-      })()}
+            </div>
+          ))}
+        </section>
+      )}
 
       <hr className="border-gray-200" />
 
@@ -533,10 +565,14 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
             onDoubleClick={() => setEditPointId(pt.id)}
             title="クリック：地図に表示　ダブルクリック：編集"
           >
-            <span className="text-base">{POINT_ICONS[pt.type]}</span>
+            {pt.type === 'location'
+              ? <span className="text-base text-red-600">●</span>
+              : <span className="text-base">{POINT_ICONS[pt.type]}</span>
+            }
             <span className={`flex-1 text-sm truncate ${!pt.enabled ? 'opacity-40 line-through' : ''}`}>{pt.name}</span>
+            {pt.type === 'location' && pt.cp && <span className="text-xs text-red-600 font-bold">CP</span>}
             <button onClick={e => { e.stopPropagation(); setEditPointId(pt.id) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
-            <button onClick={e => { e.stopPropagation(); deletePoint(pt.id) }} className="text-xs text-gray-400 hover:text-red-500">🗑</button>
+            <button onClick={e => { e.stopPropagation(); handleDeletePoint(pt.id) }} className="text-xs text-gray-400 hover:text-red-500">🗑</button>
           </div>
         ))}
       </section>
@@ -561,33 +597,35 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         </div>
       )}
 
-      {/* 区間名編集ダイアログ */}
-      {(editSegmentIdx !== null || editImplicitSeg !== null) && (() => {
-        const mainRoute = routes.find(r => r.type === 'course')
-        if (!mainRoute) return null
-        const closeDialog = () => { setEditSegmentIdx(null); setEditImplicitSeg(null) }
+      {/* 区間名・コースタイム編集ダイアログ */}
+      {editSegmentIdx !== null && (() => {
+        const segs = mainRoute?.segments
+        if (!segs || !mainRoute) return null
         return (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-3">
-              <div className="font-bold text-gray-800">区間名を変更</div>
-              <input className="border rounded px-2 py-1 text-sm" placeholder="区間名" value={editSegmentName}
-                onChange={e => setEditSegmentName(e.target.value)} autoFocus />
+              <div className="font-bold text-gray-800">区間を編集</div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">区間名</label>
+                <input className="border rounded px-2 py-1 text-sm w-full" placeholder="区間名" value={editSegmentName}
+                  onChange={e => setEditSegmentName(e.target.value)} autoFocus />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">コースタイム (hh:mm)</label>
+                <input className="border rounded px-2 py-1 text-sm w-full font-mono" placeholder="0:00"
+                  value={editCourseTime}
+                  onChange={e => setEditCourseTime(e.target.value)}
+                  pattern="[0-9]+:[0-5][0-9]" />
+              </div>
               <div className="flex gap-2 justify-end">
-                <button onClick={closeDialog} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+                <button onClick={() => setEditSegmentIdx(null)} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
                 <button
                   onClick={() => {
-                    if (editSegmentIdx !== null) {
-                      updateRoute(mainRoute.id, {
-                        segments: mainRoute.segments.map((s, i) =>
-                          i === editSegmentIdx ? { ...s, name: editSegmentName } : s
-                        ),
-                      })
-                    } else if (editImplicitSeg !== null) {
-                      updateRoute(mainRoute.id, {
-                        segments: [...mainRoute.segments, { ...editImplicitSeg, terrain: 'trail' as const, name: editSegmentName }],
-                      })
-                    }
-                    closeDialog()
+                    const newSegs = segs.map((s, i) =>
+                      i === editSegmentIdx ? { ...s, name: editSegmentName, courseTime: editCourseTime } : s
+                    )
+                    updateRoute(mainRoute.id, { segments: newSegs })
+                    setEditSegmentIdx(null)
                   }}
                   className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-500">保存</button>
               </div>
@@ -611,15 +649,11 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
               近くに「{snapConfirm.routeName}」があります。ルート上の最近傍位置に追加しますか？
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={handleSnapYes}
-                disabled={insertingCoord}
+              <button onClick={handleSnapYes} disabled={insertingCoord}
                 className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition">
                 {insertingCoord ? '処理中…' : 'ルート上に追加'}
               </button>
-              <button
-                onClick={handleSnapNo}
-                disabled={insertingCoord}
+              <button onClick={handleSnapNo} disabled={insertingCoord}
                 className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold transition">
                 そのまま追加
               </button>
@@ -632,108 +666,97 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
       {/* ポイント追加ダイアログ */}
       {newPoint && pointPos && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl p-6 w-80 flex flex-col gap-3 max-h-[90vh] overflow-y-auto">
-              <div className="font-bold text-gray-800">ポイントを追加</div>
-              <div className="text-xs text-gray-500">位置: {pointPos.lat.toFixed(5)}, {pointPos.lng.toFixed(5)}</div>
-              <select className="border rounded px-2 py-1 text-sm"
-                value={newPoint.type} onChange={e => setNewPoint({ ...newPoint, type: e.target.value as PointType })}>
-                {(Object.keys(POINT_LABELS) as PointType[]).map(t => (
-                  <option key={t} value={t}>{POINT_ICONS[t]} {POINT_LABELS[t]}</option>
-                ))}
-              </select>
-              <input className="border rounded px-2 py-1 text-sm" placeholder="名前（必須）"
-                value={newPoint.name} onChange={e => setNewPoint({ ...newPoint, name: e.target.value })} />
-              <input className="border rounded px-2 py-1 text-sm" placeholder="備考（任意）"
-                value={newPoint.note} onChange={e => setNewPoint({ ...newPoint, note: e.target.value })} />
-              {/* 写真 */}
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">写真</label>
-                <input ref={newPointPhotoRef} type="file" accept="image/*" multiple className="hidden" onChange={handleNewPointPhotos} />
-                <button onClick={() => newPointPhotoRef.current?.click()}
-                  className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded">📷 写真を追加</button>
-                {newPoint.photos.length > 0 && (
-                  <div className="flex gap-1 flex-wrap mt-1">
-                    {newPoint.photos.map((ph, i) => (
-                      <div key={i} className="relative">
-                        <img src={ph} className="w-14 h-14 object-cover rounded" />
-                        <button onClick={() => setNewPoint({ ...newPoint, photos: newPoint.photos.filter((_, j) => j !== i) })}
-                          className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2 justify-end">
-                <button onClick={() => { setNewPoint(null); setPointPos(null); clearPending() }} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
-                <button onClick={saveNewPoint} disabled={!newPoint.name.trim()}
-                  className="text-sm px-4 py-1.5 bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-40">追加</button>
-              </div>
-            </div>
-          </div>
-      )}
-
-      {/* 区間種別選択ダイアログ */}
-      {terrainDialogIndices && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-4">
-            <div className="font-bold text-gray-800">区間の種別を選択</div>
-            <div className="flex gap-2">
-              <button onClick={() => saveTerrainSegment('trail')}
-                className="flex-1 py-3 bg-green-600 hover:bg-green-500 text-white rounded-lg font-semibold text-sm transition">
-                🌿 トレイル
-              </button>
-              <button onClick={() => saveTerrainSegment('road')}
-                className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-white rounded-lg font-semibold text-sm transition">
-                🚗 ロード
-              </button>
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-80 flex flex-col gap-3 max-h-[90vh] overflow-y-auto">
+            <div className="font-bold text-gray-800">ポイントを追加</div>
+            <div className="text-xs text-gray-500">位置: {pointPos.lat.toFixed(5)}, {pointPos.lng.toFixed(5)}</div>
+            <select className="border rounded px-2 py-1 text-sm"
+              value={newPoint.type} onChange={e => setNewPoint({ ...newPoint, type: e.target.value as PointType })}>
+              {(Object.keys(POINT_LABELS) as PointType[]).map(t => (
+                <option key={t} value={t}>{t === 'location' ? '●' : POINT_ICONS[t]} {POINT_LABELS[t]}</option>
+              ))}
+            </select>
+            <input className="border rounded px-2 py-1 text-sm" placeholder="名前（必須）"
+              value={newPoint.name} onChange={e => setNewPoint({ ...newPoint, name: e.target.value })} />
+            <input className="border rounded px-2 py-1 text-sm" placeholder="備考（任意）"
+              value={newPoint.note} onChange={e => setNewPoint({ ...newPoint, note: e.target.value })} />
+            {newPoint.type === 'location' && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={newPoint.cp} onChange={e => setNewPoint({ ...newPoint, cp: e.target.checked })} className="rounded" />
+                <span className="text-red-600 font-semibold">CP（チェックポイント）</span>
+              </label>
+            )}
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">写真</label>
+              <input ref={newPointPhotoRef} type="file" accept="image/*" multiple className="hidden" onChange={handleNewPointPhotos} />
+              <button onClick={() => newPointPhotoRef.current?.click()}
+                className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded">📷 写真を追加</button>
+              {newPoint.photos.length > 0 && (
+                <div className="flex gap-1 flex-wrap mt-1">
+                  {newPoint.photos.map((ph, i) => (
+                    <div key={i} className="relative">
+                      <img src={ph} className="w-14 h-14 object-cover rounded" />
+                      <button onClick={() => setNewPoint({ ...newPoint, photos: newPoint.photos.filter((_, j) => j !== i) })}
+                        className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <button onClick={() => setTerrainDialogIndices(null)}
-              className="text-xs text-gray-400 hover:text-gray-600 text-center">キャンセル</button>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setNewPoint(null); setPointPos(null); clearPending() }} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+              <button onClick={saveNewPoint} disabled={!newPoint.name.trim()}
+                className="text-sm px-4 py-1.5 bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-40">追加</button>
+            </div>
           </div>
         </div>
       )}
 
       {/* ポイント編集ダイアログ */}
       {editPt && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-2xl p-6 w-80 flex flex-col gap-3 max-h-[90vh] overflow-y-auto">
-              <div className="font-bold text-gray-800">ポイントを編集</div>
-              <select className="border rounded px-2 py-1 text-sm"
-                value={editPt.type} onChange={e => updatePoint(editPt.id, { type: e.target.value as PointType })}>
-                {(Object.keys(POINT_LABELS) as PointType[]).map(t => (
-                  <option key={t} value={t}>{POINT_ICONS[t]} {POINT_LABELS[t]}</option>
-                ))}
-              </select>
-              <input className="border rounded px-2 py-1 text-sm" placeholder="名前"
-                value={editPt.name} onChange={e => updatePoint(editPt.id, { name: e.target.value })} />
-              <input className="border rounded px-2 py-1 text-sm" placeholder="備考"
-                value={editPt.note} onChange={e => updatePoint(editPt.id, { note: e.target.value })} />
-              {/* 写真 */}
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">写真</label>
-                <input ref={editPointPhotoRef} type="file" accept="image/*" multiple className="hidden"
-                  onChange={e => handleEditPointPhotos(e, editPt.id)} />
-                <button onClick={() => editPointPhotoRef.current?.click()}
-                  className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded">📷 写真を追加</button>
-                {(editPt.photos ?? []).length > 0 && (
-                  <div className="flex gap-1 flex-wrap mt-1">
-                    {(editPt.photos ?? []).map((ph, i) => (
-                      <div key={i} className="relative">
-                        <img src={ph} className="w-14 h-14 object-cover rounded" />
-                        <button
-                          onClick={() => updatePoint(editPt.id, { photos: (editPt.photos ?? []).filter((_, j) => j !== i) })}
-                          className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2 justify-end">
-                <button onClick={() => setEditPointId(null)} className="text-sm px-4 py-1.5 bg-green-600 text-white rounded hover:bg-green-500">閉じる</button>
-              </div>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-80 flex flex-col gap-3 max-h-[90vh] overflow-y-auto">
+            <div className="font-bold text-gray-800">ポイントを編集</div>
+            <select className="border rounded px-2 py-1 text-sm"
+              value={editPt.type} onChange={e => handleUpdatePointType(editPt.id, e.target.value as PointType)}>
+              {(Object.keys(POINT_LABELS) as PointType[]).map(t => (
+                <option key={t} value={t}>{t === 'location' ? '●' : POINT_ICONS[t]} {POINT_LABELS[t]}</option>
+              ))}
+            </select>
+            <input className="border rounded px-2 py-1 text-sm" placeholder="名前"
+              value={editPt.name} onChange={e => updatePoint(editPt.id, { name: e.target.value })} />
+            <input className="border rounded px-2 py-1 text-sm" placeholder="備考"
+              value={editPt.note} onChange={e => updatePoint(editPt.id, { note: e.target.value })} />
+            {editPt.type === 'location' && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={editPt.cp ?? false} onChange={e => updatePoint(editPt.id, { cp: e.target.checked })} className="rounded" />
+                <span className="text-red-600 font-semibold">CP（チェックポイント）</span>
+              </label>
+            )}
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">写真</label>
+              <input ref={editPointPhotoRef} type="file" accept="image/*" multiple className="hidden"
+                onChange={e => handleEditPointPhotos(e, editPt.id)} />
+              <button onClick={() => editPointPhotoRef.current?.click()}
+                className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded">📷 写真を追加</button>
+              {(editPt.photos ?? []).length > 0 && (
+                <div className="flex gap-1 flex-wrap mt-1">
+                  {(editPt.photos ?? []).map((ph, i) => (
+                    <div key={i} className="relative">
+                      <img src={ph} className="w-14 h-14 object-cover rounded" />
+                      <button
+                        onClick={() => updatePoint(editPt.id, { photos: (editPt.photos ?? []).filter((_, j) => j !== i) })}
+                        className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditPointId(null)} className="text-sm px-4 py-1.5 bg-green-600 text-white rounded hover:bg-green-500">閉じる</button>
             </div>
           </div>
+        </div>
       )}
     </div>
   )
