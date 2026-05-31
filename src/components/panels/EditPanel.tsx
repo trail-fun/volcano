@@ -9,9 +9,9 @@ import type { PointType, Route, Segment, LatLngEle, Point } from '../../types/ra
 import { POINT_ICONS } from '../map/mapStyles'
 
 const POINT_LABELS: Record<PointType, string> = {
-  exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所',
+  location: '地点', exit: '下山口', helipad: 'ヘリポート', aid: 'エイド', parking: '駐車場', danger: '危険箇所',
   closure: '通行止め', gate: '鍵', water: '水場', vending: '自販機', food: '食事', hut: '小屋', toilet: 'トイレ',
-  location: '地点', custom: 'カスタム',
+  custom: 'カスタム',
 }
 
 // Auto-compute segments from 'location' type points snapped to the route
@@ -184,7 +184,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       })
     } else {
       setPointPos(pendingLatLng)
-      setNewPoint({ type: 'exit', name: '', note: '', cp: false, section: false, photos: [] })
+      setNewPoint({ type: 'location', name: '', note: '', cp: false, section: false, photos: [] })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingLatLng])
@@ -214,14 +214,14 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       setInsertingCoord(false)
     }
     setSnapConfirm(null)
-    setNewPoint({ type: 'exit', name: '', note: '', cp: false, section: false, photos: [] })
+    setNewPoint({ type: 'location', name: '', note: '', cp: false, section: false, photos: [] })
   }
 
   const handleSnapNo = () => {
     if (!snapConfirm) return
     setPointPos(snapConfirm.original)
     setSnapConfirm(null)
-    setNewPoint({ type: 'exit', name: '', note: '', cp: false, section: false, photos: [] })
+    setNewPoint({ type: 'location', name: '', note: '', cp: false, section: false, photos: [] })
   }
 
   const saveNewPoint = () => {
