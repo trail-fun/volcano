@@ -221,6 +221,8 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     for (const route of routes) {
       const color = route.type === 'course' ? '#16a34a' : route.type === 'escape' ? '#2563eb' : '#6b7280'
       route.coords.forEach((coord, i) => {
+        // メインコースの非表示範囲内の頂点はスキップ
+        if (route.type === 'course' && hiddenCourseRanges.some(r => i > r.startIndex && i < r.endIndex)) return
         const icon = L.divIcon({
           html: `<div style="width:8px;height:8px;background:white;border:2px solid ${color};border-radius:50%;cursor:move;"></div>`,
           iconSize: [8, 8], iconAnchor: [4, 4], className: '',
@@ -246,7 +248,7 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         vertexLayersRef.current.push(m)
       })
     }
-  }, [routes, mode])
+  }, [routes, mode, hiddenCourseRanges])
 
   useEffect(() => {
     const map = mapRef.current
