@@ -450,10 +450,10 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
           />
         </div>
         <div>
-          <label className="text-xs text-gray-500 font-semibold block mb-1">スタート時間 (hh:mm)</label>
+          <label className="text-xs text-gray-500 font-semibold block mb-1">スタート時刻 (yyyy/mm/dd hh:mm)</label>
           <input
             className="w-full text-sm border rounded px-2 py-1 font-mono"
-            placeholder="9:00"
+            placeholder="2026/06/01 9:00"
             value={race?.startTime ?? ''}
             onChange={e => race && setRace({ ...race, startTime: e.target.value })}
           />

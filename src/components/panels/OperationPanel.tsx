@@ -76,6 +76,23 @@ function minsToTime(m: number): string {
   const h = Math.floor(m / 60); const min = Math.round(m % 60)
   return `${h}:${String(min).padStart(2, '0')}`
 }
+// yyyy/mm/dd hh:mm をパースして Date を返す（なければ null）
+function parseStartDateTime(s: string): Date | null {
+  if (!s) return null
+  const m = s.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/)
+  if (!m) return null
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])
+}
+// Date + 分数 → yyyy/mm/dd hh:mm
+function formatDateTime(base: Date, addMins: number): string {
+  const d = new Date(base.getTime() + addMins * 60000)
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const h = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${y}/${mo}/${day} ${h}:${min}`
+}
 
 export default function OperationPanel() {
   const { race, routes, points } = useRaceStore()
@@ -288,7 +305,7 @@ export default function OperationPanel() {
 
       {/* レースプランモーダル */}
       {showRacePlan && (() => {
-        const startMins = timeToMins(race?.startTime || '0:00')
+        const startDate = parseStartDateTime(race?.startTime || '')
         let cumDistKm = 0
         let cumMins = 0
         const rows = cpSection.map(ci => {
@@ -298,10 +315,13 @@ export default function OperationPanel() {
           const planned = ctMins * mult
           cumDistKm += ci.distKm
           cumMins += planned
+          const passageTime = startDate
+            ? formatDateTime(startDate, Math.round(cumMins))
+            : minsToTime(Math.round(cumMins))
           return {
             name: `${ci.fromName} → ${ci.toName}`,
             distKm: cumDistKm.toFixed(2),
-            passageTime: minsToTime(startMins + Math.round(cumMins)),
+            passageTime,
             cumTime: minsToTime(Math.round(cumMins)),
             ctMins, mult, planned,
           }
@@ -314,7 +334,7 @@ export default function OperationPanel() {
                 <button onClick={() => setShowRacePlan(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
               </div>
               {race?.startTime && (
-                <div className="text-xs text-gray-500">スタート時間: <span className="font-mono font-semibold">{race.startTime}</span></div>
+                <div className="text-xs text-gray-500">スタート時刻: <span className="font-mono font-semibold">{race.startTime}</span></div>
               )}
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
