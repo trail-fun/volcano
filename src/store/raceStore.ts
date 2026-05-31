@@ -49,7 +49,7 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
     const text = await file.text()
     const coords = parseGpx(text)
     const id = crypto.randomUUID()
-    const race: Race = { id, name: file.name.replace(/\.gpx$/i, ''), date: '', description: '' }
+    const race: Race = { id, name: file.name.replace(/\.gpx$/i, ''), date: '', description: '', startTime: '', cpMultipliers: {} }
     const route: Route = {
       id: 'r_main', name: 'メインコース', type: 'course',
       gpxFile: 'course_main.gpx', coords,
@@ -65,7 +65,7 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
   loadFromZip: async (file) => {
     const data = await importZip(file)
     set({
-      race: data.race,
+      race: { ...data.race, startTime: data.race.startTime ?? '', cpMultipliers: data.race.cpMultipliers ?? {} },
       routes: data.routes,
       points: data.points.map((p: Point) => ({ ...p, cp: p.cp ?? false, section: p.section ?? false })),
       history: [],

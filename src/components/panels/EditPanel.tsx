@@ -96,6 +96,10 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [editCourseTime, setEditCourseTime] = useState('')
   const [editBreakTime, setEditBreakTime] = useState('')
   const [hiddenSections, setHiddenSections] = useState<Set<number>>(new Set())
+  const [editCPInterval, setEditCPInterval] = useState<{ fromCoordIdx: number; toCoordIdx: number; fromName: string; toName: string } | null>(null)
+  const [editCPMultiplier, setEditCPMultiplier] = useState('1.0')
+  const [editSectionForCP, setEditSectionForCP] = useState<{ fromCoordIdx: number; toCoordIdx: number; fromName: string; toName: string } | null>(null)
+  const [editSectionMultiplier, setEditSectionMultiplier] = useState('1.0')
 
   const [snapConfirm, setSnapConfirm] = useState<{
     original: { lat: number; lng: number }
@@ -435,14 +439,25 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         </button>
       </div>
 
-      {/* 大会名 */}
-      <div>
-        <label className="text-xs text-gray-500 font-semibold block mb-1">大会名</label>
-        <input
-          className="w-full text-sm border rounded px-2 py-1"
-          value={race?.name ?? ''}
-          onChange={e => race && setRace({ ...race, name: e.target.value })}
-        />
+      {/* 大会名・スタート時間 */}
+      <div className="flex flex-col gap-2">
+        <div>
+          <label className="text-xs text-gray-500 font-semibold block mb-1">大会名</label>
+          <input
+            className="w-full text-sm border rounded px-2 py-1"
+            value={race?.name ?? ''}
+            onChange={e => race && setRace({ ...race, name: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 font-semibold block mb-1">スタート時間 (hh:mm)</label>
+          <input
+            className="w-full text-sm border rounded px-2 py-1 font-mono"
+            placeholder="9:00"
+            value={race?.startTime ?? ''}
+            onChange={e => race && setRace({ ...race, startTime: e.target.value })}
+          />
+        </div>
       </div>
 
       {/* ルート */}
@@ -563,6 +578,10 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                       title="クリックで地図に表示"
                     >{ci.fromName} → {ci.toName}</span>
                     <button
+                      onClick={() => { setEditSectionForCP({ fromCoordIdx: ci.fromCoordIdx, toCoordIdx: ci.toCoordIdx, fromName: ci.fromName, toName: ci.toName }); setEditSectionMultiplier('1.0') }}
+                      className="text-xs text-gray-400 hover:text-blue-500"
+                    >編集</button>
+                    <button
                       onClick={() => toggleSection(i)}
                       className={`text-xs px-1.5 py-0.5 rounded border transition ${hidden ? 'border-gray-300 text-gray-400 bg-gray-100' : 'border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
                     >{hidden ? '非表示' : '表示'}</button>
@@ -588,22 +607,32 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
           <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ CP区間</div>
           {cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).length === 0
             ? <p className="text-xs text-gray-400">CP属性のある「地点」がありません</p>
-            : cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).map((ci, i) => (
-              <div
-                key={i}
-                className="py-1 border-b last:border-0 border-gray-100 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
-                onClick={() => mainRoute && fitBounds(mainRoute.coords.slice(ci.fromCoordIdx, ci.toCoordIdx + 1))}
-                title="クリックで地図に表示"
-              >
-                <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
-                  <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
-                  {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
-                  {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
-                  {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
+            : cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).map((ci, i) => {
+              const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
+              const mult = race?.cpMultipliers?.[key] ?? 1.0
+              return (
+                <div key={i} className="py-1 border-b last:border-0 border-gray-100 -mx-1 px-1">
+                  <div className="flex items-center gap-1">
+                    <span
+                      className="text-xs font-semibold text-gray-700 flex-1 cursor-pointer hover:text-blue-600 select-none"
+                      onClick={() => mainRoute && fitBounds(mainRoute.coords.slice(ci.fromCoordIdx, ci.toCoordIdx + 1))}
+                      title="クリックで地図に表示"
+                    >{ci.fromName} → {ci.toName}</span>
+                    {mult !== 1.0 && <span className="text-xs font-mono text-amber-600">×{mult}</span>}
+                    <button
+                      onClick={() => { setEditCPInterval({ fromCoordIdx: ci.fromCoordIdx, toCoordIdx: ci.toCoordIdx, fromName: ci.fromName, toName: ci.toName }); setEditCPMultiplier(String(mult)) }}
+                      className="text-xs text-gray-400 hover:text-blue-500"
+                    >編集</button>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
+                    <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
+                    {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
+                    {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
+                    {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
+                  </div>
                 </div>
-              </div>
-            ))
+              )
+            })
           }
         </section>
       )}
@@ -755,6 +784,78 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         className="mt-auto w-full py-2 bg-green-700 hover:bg-green-600 text-white rounded-lg font-semibold text-sm transition">
         💾 ZIPで保存
       </button>
+
+      {/* CP区間 倍率編集ダイアログ */}
+      {editCPInterval && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-3">
+            <div className="font-bold text-gray-800">CT区間を編集</div>
+            <div className="text-xs text-gray-500">{editCPInterval.fromName} → {editCPInterval.toName}</div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">CTの何倍で進む計画か（例: 0.8 / 1.0 / 1.2）</label>
+              <input
+                className="border rounded px-2 py-1 text-sm w-full font-mono"
+                placeholder="1.0"
+                value={editCPMultiplier}
+                onChange={e => setEditCPMultiplier(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditCPInterval(null)} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+              <button
+                onClick={() => {
+                  if (!race) return
+                  const mult = parseFloat(editCPMultiplier)
+                  if (isNaN(mult) || mult <= 0) return
+                  const key = `${editCPInterval.fromCoordIdx}-${editCPInterval.toCoordIdx}`
+                  setRace({ ...race, cpMultipliers: { ...race.cpMultipliers, [key]: mult } })
+                  setEditCPInterval(null)
+                }}
+                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-500">保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Section 倍率一括編集ダイアログ */}
+      {editSectionForCP && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-72 flex flex-col gap-3">
+            <div className="font-bold text-gray-800">Sectionを編集</div>
+            <div className="text-xs text-gray-500">{editSectionForCP.fromName} → {editSectionForCP.toName}</div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">CTの何倍で進む計画か（このSectionのすべてのCP区間に適用）</label>
+              <input
+                className="border rounded px-2 py-1 text-sm w-full font-mono"
+                placeholder="1.0"
+                value={editSectionMultiplier}
+                onChange={e => setEditSectionMultiplier(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditSectionForCP(null)} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+              <button
+                onClick={() => {
+                  if (!race) return
+                  const mult = parseFloat(editSectionMultiplier)
+                  if (isNaN(mult) || mult <= 0) return
+                  const { fromCoordIdx, toCoordIdx } = editSectionForCP
+                  const newMults = { ...race.cpMultipliers }
+                  for (const ci of cpSection) {
+                    if (ci.fromCoordIdx >= fromCoordIdx && ci.toCoordIdx <= toCoordIdx) {
+                      newMults[`${ci.fromCoordIdx}-${ci.toCoordIdx}`] = mult
+                    }
+                  }
+                  setRace({ ...race, cpMultipliers: newMults })
+                  setEditSectionForCP(null)
+                }}
+                className="text-sm px-3 py-1.5 bg-orange-600 text-white rounded hover:bg-orange-500">適用</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ルートスナップ確認ダイアログ */}
       {snapConfirm && (

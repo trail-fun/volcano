@@ -54,4 +54,6 @@ export type Race = {
   name: string
   date: string
   description: string
+  startTime: string                      // hh:mm スタート時間
+  cpMultipliers: Record<string, number>  // key: "fromIdx-toIdx", value: CT倍率
 }

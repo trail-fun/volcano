@@ -67,12 +67,23 @@ function getDisplaySegments(segments: Segment[], coordCount: number): Segment[] 
 
 // ─── メインパネル ─────────────────────────────────────────────────────────────
 
+function timeToMins(t: string): number {
+  if (!t) return 0
+  const p = t.split(':').map(Number)
+  return (p[0] || 0) * 60 + (p[1] || 0)
+}
+function minsToTime(m: number): string {
+  const h = Math.floor(m / 60); const min = Math.round(m % 60)
+  return `${h}:${String(min).padStart(2, '0')}`
+}
+
 export default function OperationPanel() {
-  const { routes, points } = useRaceStore()
+  const { race, routes, points } = useRaceStore()
   const { position, candidates, setPosition, selectCandidate, clearCasualty } = useCasualtyStore()
   const { fitBounds, panTo, setHiddenCourseRanges } = useMapStore()
   const [latStr, setLatStr] = useState('')
   const [lngStr, setLngStr] = useState('')
+  const [showRacePlan, setShowRacePlan] = useState(false)
 
   // 確認モード起動時は hidden ranges をリセット
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,6 +275,76 @@ export default function OperationPanel() {
           </div>
         ))}
       </section>
+
+      {/* レースプラン確認ボタン */}
+      {cpSection.length > 0 && (
+        <button
+          onClick={() => setShowRacePlan(true)}
+          className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold text-sm transition"
+        >
+          📋 レースプラン確認
+        </button>
+      )}
+
+      {/* レースプランモーダル */}
+      {showRacePlan && (() => {
+        const startMins = timeToMins(race?.startTime || '0:00')
+        let cumDistKm = 0
+        let cumMins = 0
+        const rows = cpSection.map(ci => {
+          const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
+          const mult = race?.cpMultipliers?.[key] ?? 1.0
+          const ctMins = timeToMins(ci.courseTime)
+          const planned = ctMins * mult
+          cumDistKm += ci.distKm
+          cumMins += planned
+          return {
+            name: `${ci.fromName} → ${ci.toName}`,
+            distKm: cumDistKm.toFixed(2),
+            passageTime: minsToTime(startMins + Math.round(cumMins)),
+            cumTime: minsToTime(Math.round(cumMins)),
+            ctMins, mult, planned,
+          }
+        })
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-2">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col gap-3 p-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-gray-800">📋 レースプラン</div>
+                <button onClick={() => setShowRacePlan(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
+              </div>
+              {race?.startTime && (
+                <div className="text-xs text-gray-500">スタート時間: <span className="font-mono font-semibold">{race.startTime}</span></div>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left py-1.5 px-2 font-semibold text-gray-600">CT区間</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積距離</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">通過時刻</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積時間</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-1.5 px-2 text-gray-700">
+                          {r.name}
+                          {r.mult !== 1.0 && <span className="ml-1 text-amber-600 font-mono">×{r.mult}</span>}
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.distKm} km</td>
+                        <td className="py-1.5 px-2 text-right font-mono font-semibold text-gray-800">{r.passageTime}</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.cumTime}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
     </div>
   )
