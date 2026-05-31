@@ -41,7 +41,7 @@ export default function App() {
           {/* モバイル時 操作ヒント */}
           {mode === 'operation' && (
             <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-orange-500 text-white text-xs px-3 py-1 rounded-full shadow pointer-events-none z-10">
-              🚨 地図をタップして傷病者位置を指定
+              🏃 地図をタップして競技者位置を指定
             </div>
           )}
         </div>

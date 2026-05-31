@@ -6,7 +6,7 @@ import { useModeStore } from '../../store/modeStore'
 import { useCasualtyStore } from '../../store/casualtyStore'
 import { useDrawingStore } from '../../store/drawingStore'
 import { useMapStore } from '../../store/mapStore'
-import { calcCandidates } from '../../hooks/useRouteCalc'
+import { calcWaterRoute } from '../../hooks/useRouteCalc'
 import { POINT_ICONS, ROUTE_STYLES, CANDIDATE_COLORS } from './mapStyles'
 import { snapToRoute } from '../../utils/geo'
 import type { LatLngEle } from '../../types/race'
@@ -42,7 +42,7 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
 
   const { routes, points } = useRaceStore()
   const { mode, activeTool } = useModeStore()
-  const { position, selectedCandidateId, setPosition, candidates } = useCasualtyStore()
+  const { position, selectedCandidateId, setPosition, selectCandidate, candidates } = useCasualtyStore()
   const { routeType: drawingRouteType, points: drawingPoints, addPoint: addDrawingPoint } = useDrawingStore()
   const { command, hiddenCourseRanges } = useMapStore()
   const drawingLayersRef = useRef<L.Layer[]>([])
@@ -76,8 +76,9 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     const handler = (e: L.LeafletMouseEvent) => {
       if (mode === 'operation') {
         const { lat, lng } = e.latlng
-        const newCandidates = calcCandidates({ lat, lng }, routes, points)
-        setPosition({ lat, lng }, newCandidates)
+        const wr = calcWaterRoute({ lat, lng }, routes, points)
+        setPosition({ lat, lng }, wr ? [wr] : [])
+        if (wr) selectCandidate(wr.id)
       } else if (activeTool === 'add_point' || activeTool === 'set_junction') {
         onMapClick?.(e.latlng.lat, e.latlng.lng)
       } else if (activeTool === 'draw_route') {
@@ -173,11 +174,11 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     casualtyMarkerRef.current?.remove()
     if (!position) { casualtyMarkerRef.current = null; return }
     const icon = L.divIcon({
-      html: '<div style="font-size:28px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))">🚨</div>',
+      html: '<div style="font-size:28px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))">🏃</div>',
       iconSize: [32, 32], iconAnchor: [16, 16], className: '',
     })
     const m = L.marker([position.lat, position.lng], { icon, zIndexOffset: 1000 }).addTo(map)
-    m.bindPopup('傷病者位置').openPopup()
+    m.bindPopup('競技者位置').openPopup()
     casualtyMarkerRef.current = m
   }, [position])
 

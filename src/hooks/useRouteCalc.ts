@@ -129,3 +129,59 @@ export function calcCandidates(
 
   return candidates.sort((a, b) => a.totalDistanceM - b.totalDistanceM)
 }
+
+// 最寄り水場までのルート計算（確認モード用）
+export function calcWaterRoute(
+  pos: LatLng,
+  routes: Route[],
+  points: Point[],
+): RouteCandidate | null {
+  const mainRoute = routes.find(r => r.type === 'course')
+  if (!mainRoute || mainRoute.coords.length < 2) return null
+
+  const waterPoints = points.filter(p => p.type === 'water')
+  if (waterPoints.length === 0) return null
+
+  const snap = snapToRoute(pos, mainRoute.coords)
+  if (!snap) return null
+
+  const snapIdx = snap.ratio >= 0.5
+    ? Math.min(snap.segmentIndex + 1, mainRoute.coords.length - 1)
+    : snap.segmentIndex
+  const coords = mainRoute.coords
+  let nearest: RouteCandidate | null = null
+
+  for (const water of waterPoints) {
+    const wSnap = snapToRoute(water, coords, 200)
+    if (!wSnap) continue
+    const wIdx = wSnap.ratio >= 0.5
+      ? Math.min(wSnap.segmentIndex + 1, coords.length - 1)
+      : wSnap.segmentIndex
+
+    const lo = Math.min(snapIdx, wIdx)
+    const hi = Math.max(snapIdx, wIdx)
+    const slice = coords.slice(lo, hi + 1)
+    const isForward = wIdx >= snapIdx
+    const pathCoords = isForward ? slice : [...slice].reverse()
+
+    const distM = pathCoords.reduce((s, _, i) => i === 0 ? s : s + haversine(pathCoords[i - 1], pathCoords[i]), 0)
+    const { descentM, ascentM } = elevationStats(pathCoords)
+
+    const c: RouteCandidate = {
+      id: `water_${water.id}`,
+      label: isForward ? '前方' : '後方（引き返し）',
+      exitPointId: water.id,
+      exitPointName: water.name,
+      exitPointType: 'exit',
+      segments: [{ routeId: mainRoute.id, direction: isForward ? 'forward' : 'backward', fromIndex: snapIdx, toIndex: wIdx }],
+      totalDistanceM: distM,
+      totalDescentM: descentM,
+      totalAscentM: ascentM,
+      difficulty: mainRoute.difficulty,
+      transportSuitability: mainRoute.transportSuitability,
+      pathCoords,
+    }
+    if (!nearest || distM < nearest.totalDistanceM) nearest = c
+  }
+  return nearest
+}
