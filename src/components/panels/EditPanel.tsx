@@ -554,29 +554,38 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         <section>
           <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ 区間</div>
           <p className="text-xs text-gray-400 mb-1">「地点」ポイントをルート上に追加すると区間が分割されます</p>
-          {(mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '' }]).map((seg, i) => (
-            <div key={i}
-              className="flex items-center gap-1 py-0.5 text-xs cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
-              onClick={() => {
-                const sliced = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
-                if (sliced.length >= 2) fitBounds(sliced)
-              }}
-              title="クリック：地図に表示"
-            >
-              <span className="text-gray-500">—</span>
-              <span className="flex-1 text-gray-700">{seg.name || `区間 ${i + 1}`}</span>
-              {seg.courseTime && <span className="text-purple-600 font-mono">⏱ {seg.courseTime}</span>}
-              {i < mainRoute.segments.length && (
-                <button onClick={e => {
-                  e.stopPropagation()
-                  const idx = mainRoute.segments.indexOf(seg)
-                  setEditSegmentIdx(idx >= 0 ? idx : 0)
-                  setEditSegmentName(seg.name)
-                  setEditCourseTime(seg.courseTime)
-                }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
-              )}
-            </div>
-          ))}
+          {(mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '' }]).map((seg, i) => {
+            const slice = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
+            let distM = 0
+            for (let j = 1; j < slice.length; j++) distM += haversine(slice[j - 1], slice[j])
+            const { descentM, ascentM } = elevationStats(slice)
+            return (
+              <div key={i}
+                className="py-1 border-b last:border-0 border-gray-100 text-xs cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+                onClick={() => { if (slice.length >= 2) fitBounds(slice) }}
+                title="クリック：地図に表示"
+              >
+                <div className="flex items-center gap-1">
+                  <span className="flex-1 font-semibold text-gray-700">{seg.name || `区間 ${i + 1}`}</span>
+                  {i < mainRoute.segments.length && (
+                    <button onClick={e => {
+                      e.stopPropagation()
+                      const idx = mainRoute.segments.indexOf(seg)
+                      setEditSegmentIdx(idx >= 0 ? idx : 0)
+                      setEditSegmentName(seg.name)
+                      setEditCourseTime(seg.courseTime)
+                    }} className="text-gray-400 hover:text-blue-500">編集</button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono mt-0.5">
+                  <span className="text-gray-600">📏 {(distM / 1000).toFixed(2)} km</span>
+                  {descentM > 0 && <span className="text-blue-600">↓ {Math.round(descentM)} m</span>}
+                  {ascentM > 0 && <span className="text-red-500">↑ {Math.round(ascentM)} m</span>}
+                  {seg.courseTime && <span className="text-purple-600">⏱ {seg.courseTime}</span>}
+                </div>
+              </div>
+            )
+          })}
         </section>
       )}
 
