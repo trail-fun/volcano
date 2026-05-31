@@ -312,23 +312,31 @@ export default function OperationPanel() {
           const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
           const mult = race?.cpMultipliers?.[key] ?? 1.0
           const ctMins = timeToMins(ci.courseTime)
-          const planned = ctMins * mult
+          const intervalMins = ctMins * mult  // 区間時間（CT × 倍率）
+          // 休憩時間: このCP区間内のセグメントのbreakTimeを合算
+          const breakMins = mainRoute
+            ? mainRoute.segments
+                .filter(s => s.startIndex >= ci.fromCoordIdx && s.endIndex <= ci.toCoordIdx)
+                .reduce((sum, s) => sum + timeToMins(s.breakTime || ''), 0)
+            : 0
           cumDistKm += ci.distKm
-          cumMins += planned
+          cumMins += intervalMins + breakMins
           const passageTime = startDate
             ? formatDateTime(startDate, Math.round(cumMins))
             : minsToTime(Math.round(cumMins))
           return {
             name: `${ci.fromName} → ${ci.toName}`,
             distKm: cumDistKm.toFixed(2),
+            intervalTime: minsToTime(Math.round(intervalMins)),
+            breakTime: breakMins > 0 ? minsToTime(Math.round(breakMins)) : '',
             passageTime,
             cumTime: minsToTime(Math.round(cumMins)),
-            ctMins, mult, planned,
+            mult,
           }
         })
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-2">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col gap-3 p-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col gap-3 p-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <div className="font-bold text-gray-800">📋 レースプラン</div>
                 <button onClick={() => setShowRacePlan(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
@@ -342,6 +350,8 @@ export default function OperationPanel() {
                     <tr className="bg-gray-50 border-b border-gray-200">
                       <th className="text-left py-1.5 px-2 font-semibold text-gray-600">CT区間</th>
                       <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積距離</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">区間時間</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">休憩時間</th>
                       <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">通過時刻</th>
                       <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積時間</th>
                     </tr>
@@ -354,6 +364,8 @@ export default function OperationPanel() {
                           {r.mult !== 1.0 && <span className="ml-1 text-amber-600 font-mono">×{r.mult}</span>}
                         </td>
                         <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.distKm} km</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-purple-700">{r.intervalTime}</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-orange-600">{r.breakTime || '—'}</td>
                         <td className="py-1.5 px-2 text-right font-mono font-semibold text-gray-800">{r.passageTime}</td>
                         <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.cumTime}</td>
                       </tr>
