@@ -100,7 +100,78 @@ export default function OperationPanel() {
   const { fitBounds, panTo, setHiddenCourseRanges } = useMapStore()
   const [latStr, setLatStr] = useState('')
   const [lngStr, setLngStr] = useState('')
-  const [showRacePlan, setShowRacePlan] = useState(false)
+  const openRacePlan = () => {
+    const startDate = parseStartDateTime(race?.startTime || '')
+    let cumDistKm = 0
+    let cumMins = 0
+    const rows = cpSection.map(ci => {
+      const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
+      const mult = race?.cpMultipliers?.[key] ?? 1.0
+      const ctMins = timeToMins(ci.courseTime)
+      const intervalMins = ctMins * mult
+      const breakMins = mainRoute
+        ? mainRoute.segments
+            .filter(s => s.startIndex >= ci.fromCoordIdx && s.endIndex <= ci.toCoordIdx)
+            .reduce((sum, s) => sum + timeToMins(s.breakTime || ''), 0)
+        : 0
+      cumDistKm += ci.distKm
+      cumMins += intervalMins + breakMins
+      const passageTime = startDate
+        ? formatDateTime(startDate, Math.round(cumMins))
+        : minsToTime(Math.round(cumMins))
+      return {
+        name: `${ci.fromName} → ${ci.toName}`,
+        distKm: cumDistKm.toFixed(2),
+        intervalTime: minsToTime(Math.round(intervalMins)),
+        breakTime: breakMins > 0 ? minsToTime(Math.round(breakMins)) : '',
+        passageTime,
+        cumTime: minsToTime(Math.round(cumMins)),
+        mult,
+      }
+    })
+
+    const startInfo = race?.startTime
+      ? `<p style="font-size:12px;color:#666;margin:0 0 12px">スタート時刻: <strong>${race.startTime}</strong></p>`
+      : ''
+    const trs = rows.map(r =>
+      `<tr>
+        <td>${r.name}${r.mult !== 1.0 ? ` <span style="color:#d97706">×${r.mult}</span>` : ''}</td>
+        <td class="num">${r.distKm} km</td>
+        <td class="num" style="color:#7c3aed">${r.intervalTime}</td>
+        <td class="num" style="color:#ea580c">${r.breakTime || '—'}</td>
+        <td class="num" style="font-weight:600">${r.passageTime}</td>
+        <td class="num" style="color:#555">${r.cumTime}</td>
+      </tr>`
+    ).join('')
+
+    const html = `<!DOCTYPE html><html lang="ja"><head>
+<meta charset="utf-8"><title>レースプラン</title>
+<style>
+  body{font-family:sans-serif;padding:20px;font-size:13px;background:#fff}
+  h2{margin:0 0 8px;font-size:16px}
+  table{border-collapse:collapse;width:100%}
+  th,td{padding:6px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+  th{background:#f9fafb;font-weight:600;color:#374151;text-align:right}
+  th:first-child{text-align:left}
+  td:first-child{text-align:left;color:#374151}
+  .num{text-align:right;font-family:monospace}
+  tr:hover td{background:#f9fafb}
+</style>
+</head><body>
+<h2>📋 レースプラン</h2>
+${startInfo}
+<table>
+<thead><tr>
+  <th style="text-align:left">CT区間</th>
+  <th>累積距離</th><th>区間時間</th><th>休憩時間</th><th>通過時刻</th><th>累積時間</th>
+</tr></thead>
+<tbody>${trs}</tbody>
+</table>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=700,height=500')
+    if (w) { w.document.write(html); w.document.close() }
+  }
 
   // 確認モード起動時は hidden ranges をリセット
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -296,87 +367,12 @@ export default function OperationPanel() {
       {/* レースプラン確認ボタン */}
       {cpSection.length > 0 && (
         <button
-          onClick={() => setShowRacePlan(true)}
+          onClick={openRacePlan}
           className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold text-sm transition"
         >
           📋 レースプラン確認
         </button>
       )}
-
-      {/* レースプランモーダル */}
-      {showRacePlan && (() => {
-        const startDate = parseStartDateTime(race?.startTime || '')
-        let cumDistKm = 0
-        let cumMins = 0
-        const rows = cpSection.map(ci => {
-          const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
-          const mult = race?.cpMultipliers?.[key] ?? 1.0
-          const ctMins = timeToMins(ci.courseTime)
-          const intervalMins = ctMins * mult  // 区間時間（CT × 倍率）
-          // 休憩時間: このCP区間内のセグメントのbreakTimeを合算
-          const breakMins = mainRoute
-            ? mainRoute.segments
-                .filter(s => s.startIndex >= ci.fromCoordIdx && s.endIndex <= ci.toCoordIdx)
-                .reduce((sum, s) => sum + timeToMins(s.breakTime || ''), 0)
-            : 0
-          cumDistKm += ci.distKm
-          cumMins += intervalMins + breakMins
-          const passageTime = startDate
-            ? formatDateTime(startDate, Math.round(cumMins))
-            : minsToTime(Math.round(cumMins))
-          return {
-            name: `${ci.fromName} → ${ci.toName}`,
-            distKm: cumDistKm.toFixed(2),
-            intervalTime: minsToTime(Math.round(intervalMins)),
-            breakTime: breakMins > 0 ? minsToTime(Math.round(breakMins)) : '',
-            passageTime,
-            cumTime: minsToTime(Math.round(cumMins)),
-            mult,
-          }
-        })
-        return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-2">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col gap-3 p-4 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between">
-                <div className="font-bold text-gray-800">📋 レースプラン</div>
-                <button onClick={() => setShowRacePlan(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
-              </div>
-              {race?.startTime && (
-                <div className="text-xs text-gray-500">スタート時刻: <span className="font-mono font-semibold">{race.startTime}</span></div>
-              )}
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left py-1.5 px-2 font-semibold text-gray-600">CT区間</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積距離</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">区間時間</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">休憩時間</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">通過時刻</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積時間</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, i) => (
-                      <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-1.5 px-2 text-gray-700">
-                          {r.name}
-                          {r.mult !== 1.0 && <span className="ml-1 text-amber-600 font-mono">×{r.mult}</span>}
-                        </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.distKm} km</td>
-                        <td className="py-1.5 px-2 text-right font-mono text-purple-700">{r.intervalTime}</td>
-                        <td className="py-1.5 px-2 text-right font-mono text-orange-600">{r.breakTime || '—'}</td>
-                        <td className="py-1.5 px-2 text-right font-mono font-semibold text-gray-800">{r.passageTime}</td>
-                        <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.cumTime}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
 
     </div>
   )
