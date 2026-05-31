@@ -335,14 +335,38 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const editPt = editPointId ? points.find(p => p.id === editPointId) : null
   const mainRoute = routes.find(r => r.type === 'course')
 
-  // CP区間計算
-  const cpSection = (() => {
-    if (!mainRoute || mainRoute.coords.length < 2) return null
+  // フラグ別の区間計算（CP / Section 共通）
+  function calcIntervals(flagPoints: { name: string; coordIdx: number }[]) {
+    if (!mainRoute || mainRoute.coords.length < 2) return []
     const coords = mainRoute.coords
     const n = coords.length - 1
+    const bounds = [
+      { name: 'スタート', coordIdx: 0 },
+      ...flagPoints,
+      { name: 'フィニッシュ', coordIdx: n },
+    ]
+    return bounds.slice(0, -1).map((from, i) => {
+      const to = bounds[i + 1]
+      const slice = coords.slice(from.coordIdx, to.coordIdx + 1)
+      let distM = 0
+      for (let j = 1; j < slice.length; j++) distM += haversine(slice[j - 1], slice[j])
+      const { descentM, ascentM } = elevationStats(slice)
+      const totalMins = mainRoute.segments
+        .filter(s => s.startIndex >= from.coordIdx && s.endIndex <= to.coordIdx)
+        .reduce((sum, s) => sum + parseTime(s.courseTime), 0)
+      return {
+        fromName: from.name, toName: to.name,
+        distKm: distM / 1000, descentM, ascentM,
+        courseTime: totalMins > 0 ? formatTime(totalMins) : '',
+      }
+    })
+  }
 
-    const cpPoints = points
-      .filter(p => p.type === 'location' && p.cp)
+  function snapLocationPoints(filter: (p: { cp: boolean; section: boolean }) => boolean) {
+    if (!mainRoute || mainRoute.coords.length < 2) return []
+    const coords = mainRoute.coords
+    return points
+      .filter(p => p.type === 'location' && filter(p))
       .map(p => {
         const snap = snapToRoute(p, coords, 100)
         if (!snap) return null
@@ -353,30 +377,10 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       })
       .filter((x): x is { name: string; coordIdx: number } => x !== null)
       .sort((a, b) => a.coordIdx - b.coordIdx)
+  }
 
-    const cpBounds = [
-      { name: 'スタート', coordIdx: 0 },
-      ...cpPoints,
-      { name: 'フィニッシュ', coordIdx: n },
-    ]
-
-    return cpBounds.slice(0, -1).map((from, i) => {
-      const to = cpBounds[i + 1]
-      const slice = coords.slice(from.coordIdx, to.coordIdx + 1)
-      let distM = 0
-      for (let j = 1; j < slice.length; j++) distM += haversine(slice[j - 1], slice[j])
-      const { descentM, ascentM } = elevationStats(slice)
-      const segsInInterval = mainRoute.segments.filter(
-        s => s.startIndex >= from.coordIdx && s.endIndex <= to.coordIdx
-      )
-      const totalMins = segsInInterval.reduce((sum, s) => sum + parseTime(s.courseTime), 0)
-      return {
-        fromName: from.name, toName: to.name,
-        distKm: distM / 1000, descentM, ascentM,
-        courseTime: totalMins > 0 ? formatTime(totalMins) : '',
-      }
-    })
-  })()
+  const cpSection = calcIntervals(snapLocationPoints(p => p.cp))
+  const sectionIntervals = calcIntervals(snapLocationPoints(p => p.section))
 
   return (
     <div className="flex flex-col gap-3 h-full overflow-y-auto">
@@ -503,6 +507,48 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
       <hr className="border-gray-200" />
 
+      {/* Section */}
+      {mainRoute && (
+        <section>
+          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ Section</div>
+          {sectionIntervals.length === 0
+            ? <p className="text-xs text-gray-400">Sectionポイント属性のある「地点」がありません</p>
+            : sectionIntervals.map((ci, i) => (
+              <div key={i} className="py-1 border-b last:border-0 border-gray-100">
+                <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
+                  <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
+                  {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
+                  {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
+                  {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
+                </div>
+              </div>
+            ))
+          }
+        </section>
+      )}
+
+      {/* CP区間 */}
+      {mainRoute && (
+        <section>
+          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ CP区間</div>
+          {cpSection.length === 0
+            ? <p className="text-xs text-gray-400">CP属性のある「地点」がありません</p>
+            : cpSection.map((ci, i) => (
+              <div key={i} className="py-1 border-b last:border-0 border-gray-100">
+                <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
+                  <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
+                  {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
+                  {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
+                  {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
+                </div>
+              </div>
+            ))
+          }
+        </section>
+      )}
+
       {/* 区間 */}
       {mainRoute && (
         <section>
@@ -524,39 +570,11 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                 <button onClick={e => {
                   e.stopPropagation()
                   const idx = mainRoute.segments.indexOf(seg)
-                  if (idx >= 0) {
-                    setEditSegmentIdx(idx)
-                    setEditSegmentName(seg.name)
-                    setEditCourseTime(seg.courseTime)
-                  } else {
-                    // implicit segment (no location points): treat as index 0 in the stored array
-                    setEditSegmentIdx(0)
-                    setEditSegmentName(seg.name)
-                    setEditCourseTime(seg.courseTime)
-                  }
+                  setEditSegmentIdx(idx >= 0 ? idx : 0)
+                  setEditSegmentName(seg.name)
+                  setEditCourseTime(seg.courseTime)
                 }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
               )}
-            </div>
-          ))}
-        </section>
-      )}
-
-      {/* CP区間 */}
-      {mainRoute && (
-        <section>
-          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ CP区間</div>
-          {(!cpSection || cpSection.length === 0) && (
-            <p className="text-xs text-gray-400">CP属性のある「地点」がありません</p>
-          )}
-          {cpSection && cpSection.length > 0 && cpSection.map((ci, i) => (
-            <div key={i} className="py-1 border-b last:border-0 border-gray-100">
-              <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
-                <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
-                {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
-                {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
-                {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
-              </div>
             </div>
           ))}
         </section>
