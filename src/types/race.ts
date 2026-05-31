@@ -12,6 +12,7 @@ export type Point = {
   note: string
   enabled: boolean
   cp: boolean
+  section: boolean
   photos: string[]
 }
 

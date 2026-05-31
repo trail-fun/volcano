@@ -86,7 +86,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const newPointPhotoRef = useRef<HTMLInputElement>(null)
   const editPointPhotoRef = useRef<HTMLInputElement>(null)
 
-  const [newPoint, setNewPoint] = useState<{ type: PointType; name: string; note: string; cp: boolean; photos: string[] } | null>(null)
+  const [newPoint, setNewPoint] = useState<{ type: PointType; name: string; note: string; cp: boolean; section: boolean; photos: string[] } | null>(null)
   const [editPointId, setEditPointId] = useState<string | null>(null)
   const [editRouteId, setEditRouteId] = useState<string | null>(null)
   const [editRouteName, setEditRouteName] = useState('')
@@ -184,7 +184,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       })
     } else {
       setPointPos(pendingLatLng)
-      setNewPoint({ type: 'exit', name: '', note: '', cp: false, photos: [] })
+      setNewPoint({ type: 'exit', name: '', note: '', cp: false, section: false, photos: [] })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingLatLng])
@@ -214,14 +214,14 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       setInsertingCoord(false)
     }
     setSnapConfirm(null)
-    setNewPoint({ type: 'exit', name: '', note: '', cp: false, photos: [] })
+    setNewPoint({ type: 'exit', name: '', note: '', cp: false, section: false, photos: [] })
   }
 
   const handleSnapNo = () => {
     if (!snapConfirm) return
     setPointPos(snapConfirm.original)
     setSnapConfirm(null)
-    setNewPoint({ type: 'exit', name: '', note: '', cp: false, photos: [] })
+    setNewPoint({ type: 'exit', name: '', note: '', cp: false, section: false, photos: [] })
   }
 
   const saveNewPoint = () => {
@@ -234,6 +234,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       name: newPoint.name,
       note: newPoint.note,
       cp: newPoint.cp,
+      section: newPoint.section,
       enabled: true,
       photos: newPoint.photos,
     }
@@ -586,6 +587,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
             }
             <span className={`flex-1 text-sm truncate ${!pt.enabled ? 'opacity-40 line-through' : ''}`}>{pt.name}</span>
             {pt.type === 'location' && pt.cp && <span className="text-xs text-red-600 font-bold">CP</span>}
+            {pt.type === 'location' && pt.section && <span className="text-xs text-orange-600 font-bold">S</span>}
             <button onClick={e => { e.stopPropagation(); setEditPointId(pt.id) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
             <button onClick={e => { e.stopPropagation(); handleDeletePoint(pt.id) }} className="text-xs text-gray-400 hover:text-red-500">🗑</button>
           </div>
@@ -697,10 +699,16 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
             <input className="border rounded px-2 py-1 text-sm" placeholder="備考（任意）"
               value={newPoint.note} onChange={e => setNewPoint({ ...newPoint, note: e.target.value })} />
             {newPoint.type === 'location' && (
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={newPoint.cp} onChange={e => setNewPoint({ ...newPoint, cp: e.target.checked })} className="rounded" />
-                <span className="text-red-600 font-semibold">CP（チェックポイント）</span>
-              </label>
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={newPoint.cp} onChange={e => setNewPoint({ ...newPoint, cp: e.target.checked })} className="rounded" />
+                  <span className="text-red-600 font-semibold">CP（チェックポイント）</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={newPoint.section} onChange={e => setNewPoint({ ...newPoint, section: e.target.checked })} className="rounded" />
+                  <span className="text-orange-600 font-semibold">Sectionポイント</span>
+                </label>
+              </div>
             )}
             <div>
               <label className="text-xs text-gray-500 block mb-1">写真</label>
@@ -744,10 +752,16 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
             <input className="border rounded px-2 py-1 text-sm" placeholder="備考"
               value={editPt.note} onChange={e => updatePoint(editPt.id, { note: e.target.value })} />
             {editPt.type === 'location' && (
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={editPt.cp ?? false} onChange={e => updatePoint(editPt.id, { cp: e.target.checked })} className="rounded" />
-                <span className="text-red-600 font-semibold">CP（チェックポイント）</span>
-              </label>
+              <div className="flex flex-col gap-1">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={editPt.cp ?? false} onChange={e => updatePoint(editPt.id, { cp: e.target.checked })} className="rounded" />
+                  <span className="text-red-600 font-semibold">CP（チェックポイント）</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={editPt.section ?? false} onChange={e => updatePoint(editPt.id, { section: e.target.checked })} className="rounded" />
+                  <span className="text-orange-600 font-semibold">Sectionポイント</span>
+                </label>
+              </div>
             )}
             <div>
               <label className="text-xs text-gray-500 block mb-1">写真</label>

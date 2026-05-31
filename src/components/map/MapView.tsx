@@ -109,15 +109,16 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     for (const pt of points) {
       const opacity = !pt.enabled ? 0.35 : dimmed ? 0.3 : 1
       if (pt.type === 'location') {
+        const badges = [pt.cp ? 'CP' : '', pt.section ? 'S' : ''].filter(Boolean).join(' ')
         const m = L.circleMarker([pt.lat, pt.lng], {
-          radius: 10,
+          radius: 7,
           color: '#dc2626',
           fillColor: 'white',
           fillOpacity: 1,
-          weight: 3,
+          weight: 2.5,
           opacity,
         }).addTo(map)
-        if (!dimmed) m.bindPopup(`<b>${pt.name}</b>${pt.cp ? ' <span style="color:#dc2626;font-size:10px">CP</span>' : ''}<br><span style="font-size:11px">${pt.note || ''}</span>`)
+        if (!dimmed) m.bindPopup(`<b>${pt.name}</b>${badges ? ` <span style="color:#dc2626;font-size:10px">${badges}</span>` : ''}<br><span style="font-size:11px">${pt.note || ''}</span>`)
         layersRef.current.push(m)
       } else {
         const icon = L.divIcon({

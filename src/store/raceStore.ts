@@ -67,7 +67,7 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
     set({
       race: data.race,
       routes: data.routes,
-      points: data.points.map((p: Point) => ({ ...p, cp: p.cp ?? false })),
+      points: data.points.map((p: Point) => ({ ...p, cp: p.cp ?? false, section: p.section ?? false })),
       history: [],
     })
   },
