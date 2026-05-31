@@ -555,7 +555,11 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
               return (
                 <div key={i} className={`py-1 border-b last:border-0 border-gray-100 ${hidden ? 'opacity-40' : ''}`}>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-semibold text-gray-700 flex-1">{ci.fromName} → {ci.toName}</span>
+                    <span
+                      className="text-xs font-semibold text-gray-700 flex-1 cursor-pointer hover:text-blue-600 select-none"
+                      onClick={() => { if (!hidden && mainRoute) fitBounds(mainRoute.coords.slice(ci.fromCoordIdx, ci.toCoordIdx + 1)) }}
+                      title="クリックで地図に表示"
+                    >{ci.fromName} → {ci.toName}</span>
                     <button
                       onClick={() => toggleSection(i)}
                       className={`text-xs px-1.5 py-0.5 rounded border transition ${hidden ? 'border-gray-300 text-gray-400 bg-gray-100' : 'border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
@@ -583,7 +587,12 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
           {cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).length === 0
             ? <p className="text-xs text-gray-400">CP属性のある「地点」がありません</p>
             : cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).map((ci, i) => (
-              <div key={i} className="py-1 border-b last:border-0 border-gray-100">
+              <div
+                key={i}
+                className="py-1 border-b last:border-0 border-gray-100 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+                onClick={() => mainRoute && fitBounds(mainRoute.coords.slice(ci.fromCoordIdx, ci.toCoordIdx + 1))}
+                title="クリックで地図に表示"
+              >
                 <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
                   <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
