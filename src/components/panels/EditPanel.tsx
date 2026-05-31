@@ -80,7 +80,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const { race, routes, points, history, setRace, exportToZip, addPoint, updatePoint, deletePoint, addRoute, updateRoute, setJunction, undo } = useRaceStore()
   const { activeTool, setActiveTool } = useModeStore()
   const { routeType: drawingRouteType, points: drawingPoints, startDrawing, removeLastPoint, clearDrawing } = useDrawingStore()
-  const { fitBounds, panTo } = useMapStore()
+  const { fitBounds, panTo, setHiddenCourseRanges } = useMapStore()
   const escGpxRef = useRef<HTMLInputElement>(null)
   const roadGpxRef = useRef<HTMLInputElement>(null)
   const newPointPhotoRef = useRef<HTMLInputElement>(null)
@@ -93,6 +93,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [editSegmentIdx, setEditSegmentIdx] = useState<number | null>(null)
   const [editSegmentName, setEditSegmentName] = useState('')
   const [editCourseTime, setEditCourseTime] = useState('')
+  const [hiddenSections, setHiddenSections] = useState<Set<number>>(new Set())
 
   const [snapConfirm, setSnapConfirm] = useState<{
     original: { lat: number; lng: number }
@@ -356,6 +357,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         .reduce((sum, s) => sum + parseTime(s.courseTime), 0)
       return {
         fromName: from.name, toName: to.name,
+        fromCoordIdx: from.coordIdx, toCoordIdx: to.coordIdx,
         distKm: distM / 1000, descentM, ascentM,
         courseTime: totalMins > 0 ? formatTime(totalMins) : '',
       }
@@ -381,6 +383,41 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
   const cpSection = calcIntervals(snapLocationPoints(p => p.cp))
   const sectionIntervals = calcIntervals(snapLocationPoints(p => p.section))
+
+  // hiddenSections が変わったら mapStore を更新
+  useEffect(() => {
+    if (!mainRoute || mainRoute.coords.length < 2) { setHiddenCourseRanges([]); return }
+    const coords = mainRoute.coords
+    const n = coords.length - 1
+    const secPts = points
+      .filter(p => p.type === 'location' && p.section)
+      .map(p => {
+        const snap = snapToRoute(p, coords, 100)
+        if (!snap) return null
+        const idx = snap.ratio >= 0.5 ? Math.min(snap.segmentIndex + 1, coords.length - 1) : snap.segmentIndex
+        return { coordIdx: idx }
+      })
+      .filter((x): x is { coordIdx: number } => x !== null)
+      .sort((a, b) => a.coordIdx - b.coordIdx)
+    const bounds = [{ coordIdx: 0 }, ...secPts, { coordIdx: n }]
+    const ranges = bounds.slice(0, -1)
+      .map((from, i) => ({ startIndex: from.coordIdx, endIndex: bounds[i + 1].coordIdx, sectionIdx: i }))
+      .filter(r => hiddenSections.has(r.sectionIdx))
+      .map(r => ({ startIndex: r.startIndex, endIndex: r.endIndex }))
+    setHiddenCourseRanges(ranges)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hiddenSections, points, routes])
+
+  const toggleSection = (i: number) => setHiddenSections(prev => {
+    const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next
+  })
+
+  // 区間・CP区間がhiddenSectionsの範囲内かチェック
+  const isRangeHidden = (fromIdx: number, toIdx: number) => {
+    if (hiddenSections.size === 0) return false
+    const mid = (fromIdx + toIdx) / 2
+    return sectionIntervals.some((si, i) => hiddenSections.has(i) && mid > si.fromCoordIdx && mid < si.toCoordIdx)
+  }
 
   return (
     <div className="flex flex-col gap-3 h-full overflow-y-auto">
@@ -513,28 +550,39 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
           <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ Section</div>
           {sectionIntervals.length === 0
             ? <p className="text-xs text-gray-400">Sectionポイント属性のある「地点」がありません</p>
-            : sectionIntervals.map((ci, i) => (
-              <div key={i} className="py-1 border-b last:border-0 border-gray-100">
-                <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
-                  <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
-                  {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
-                  {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
-                  {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
+            : sectionIntervals.map((ci, i) => {
+              const hidden = hiddenSections.has(i)
+              return (
+                <div key={i} className={`py-1 border-b last:border-0 border-gray-100 ${hidden ? 'opacity-40' : ''}`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold text-gray-700 flex-1">{ci.fromName} → {ci.toName}</span>
+                    <button
+                      onClick={() => toggleSection(i)}
+                      className={`text-xs px-1.5 py-0.5 rounded border transition ${hidden ? 'border-gray-300 text-gray-400 bg-gray-100' : 'border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
+                    >{hidden ? '非表示' : '表示'}</button>
+                  </div>
+                  {!hidden && (
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
+                      <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
+                      {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
+                      {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
+                      {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))
+              )
+            })
           }
         </section>
       )}
 
-      {/* CP区間 */}
-      {mainRoute && (
+      {/* CP区間 — hiddenSectionsに含まれる範囲は非表示 */}
+      {mainRoute && cpSection.some(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)) && (
         <section>
           <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ CP区間</div>
-          {cpSection.length === 0
+          {cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).length === 0
             ? <p className="text-xs text-gray-400">CP属性のある「地点」がありません</p>
-            : cpSection.map((ci, i) => (
+            : cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).map((ci, i) => (
               <div key={i} className="py-1 border-b last:border-0 border-gray-100">
                 <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
@@ -549,12 +597,14 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         </section>
       )}
 
-      {/* 区間 */}
+      {/* 区間 — hiddenSectionsに含まれる範囲は非表示 */}
       {mainRoute && (
         <section>
           <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ 区間</div>
           <p className="text-xs text-gray-400 mb-1">「地点」ポイントをルート上に追加すると区間が分割されます</p>
-          {(mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '' }]).map((seg, i) => {
+          {(mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '' }])
+            .filter(seg => !isRangeHidden(seg.startIndex, seg.endIndex))
+            .map((seg, i) => {
             const slice = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
             let distM = 0
             for (let j = 1; j < slice.length; j++) distM += haversine(slice[j - 1], slice[j])

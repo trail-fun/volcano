@@ -9,7 +9,26 @@ import { useMapStore } from '../../store/mapStore'
 import { calcCandidates } from '../../hooks/useRouteCalc'
 import { POINT_ICONS, ROUTE_STYLES, CANDIDATE_COLORS } from './mapStyles'
 import { snapToRoute } from '../../utils/geo'
-import type {} from '../../types/race'
+import type { LatLngEle } from '../../types/race'
+import type { HiddenRange } from '../../store/mapStore'
+
+function buildVisibleSegments(coords: LatLngEle[], hidden: HiddenRange[]): [number, number][][] {
+  if (hidden.length === 0) return [coords.map(c => [c.lat, c.lng] as [number, number])]
+  const isHiddenEdge = (j: number) => hidden.some(r => j >= r.startIndex && j < r.endIndex)
+  const segments: [number, number][][] = []
+  let cur: [number, number][] = []
+  for (let j = 0; j < coords.length - 1; j++) {
+    if (!isHiddenEdge(j)) {
+      if (cur.length === 0) cur.push([coords[j].lat, coords[j].lng])
+      cur.push([coords[j + 1].lat, coords[j + 1].lng])
+    } else {
+      if (cur.length >= 2) segments.push([...cur])
+      cur = []
+    }
+  }
+  if (cur.length >= 2) segments.push(cur)
+  return segments
+}
 
 const GSI_URL = 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'
 
@@ -25,7 +44,7 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
   const { mode, activeTool } = useModeStore()
   const { position, selectedCandidateId, setPosition, candidates } = useCasualtyStore()
   const { routeType: drawingRouteType, points: drawingPoints, addPoint: addDrawingPoint } = useDrawingStore()
-  const { command } = useMapStore()
+  const { command, hiddenCourseRanges } = useMapStore()
   const drawingLayersRef = useRef<L.Layer[]>([])
   const vertexLayersRef = useRef<L.Layer[]>([])
   const snapPreviewRef = useRef<L.CircleMarker | L.Marker | null>(null)
@@ -88,14 +107,18 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
 
     const dimmed = position !== null && candidates.length > 0
     const baseOpacity = dimmed ? 0.2 : 1.0
+    const mainRoute = routes.find(r => r.type === 'course')
 
     for (const route of routes) {
       if (route.coords.length < 2) continue
-      const latlngs = route.coords.map(c => [c.lat, c.lng] as [number, number])
       const style = { ...ROUTE_STYLES[route.type], opacity: ROUTE_STYLES[route.type].opacity! * baseOpacity }
-      const line = L.polyline(latlngs, style).addTo(map)
-      if (!dimmed) line.bindTooltip(route.name, { sticky: true })
-      layersRef.current.push(line)
+      const hidden = route.type === 'course' ? hiddenCourseRanges : []
+      for (const seg of buildVisibleSegments(route.coords, hidden)) {
+        if (seg.length < 2) continue
+        const line = L.polyline(seg, style).addTo(map)
+        if (!dimmed) line.bindTooltip(route.name, { sticky: true })
+        layersRef.current.push(line)
+      }
 
       if (route.type !== 'course' && route.junction) {
         const m = L.circleMarker([route.junction.lat, route.junction.lng], {
@@ -106,7 +129,19 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
       }
     }
 
+    // 地点がhiddenRangeの内側(境界除く)にあるか判定
+    const isInHiddenRange = (lat: number, lng: number): boolean => {
+      if (hiddenCourseRanges.length === 0 || !mainRoute) return false
+      const snap = snapToRoute({ lat, lng }, mainRoute.coords, 200)
+      if (!snap) return false
+      const ci = snap.ratio >= 0.5
+        ? Math.min(snap.segmentIndex + 1, mainRoute.coords.length - 1)
+        : snap.segmentIndex
+      return hiddenCourseRanges.some(r => ci > r.startIndex && ci < r.endIndex)
+    }
+
     for (const pt of points) {
+      if (isInHiddenRange(pt.lat, pt.lng)) continue
       const opacity = !pt.enabled ? 0.35 : dimmed ? 0.3 : 1
       if (pt.type === 'location') {
         const badges = [pt.cp ? 'CP' : '', pt.section ? 'S' : ''].filter(Boolean).join(' ')
@@ -130,7 +165,7 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         layersRef.current.push(marker)
       }
     }
-  }, [routes, points, position, candidates])
+  }, [routes, points, position, candidates, hiddenCourseRanges])
 
   useEffect(() => {
     const map = mapRef.current
@@ -194,10 +229,19 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         const routeId = route.id
         m.on('dragend', () => {
           const { lat, lng } = (m as L.Marker).getLatLng()
-          const cur = useRaceStore.getState().routes.find(r => r.id === routeId)
+          const store = useRaceStore.getState()
+          const cur = store.routes.find(r => r.id === routeId)
           if (!cur) return
+          const oldCoord = cur.coords[i]
           const newCoords = cur.coords.map((c, j) => j === i ? { ...c, lat, lng } : c)
-          useRaceStore.getState().updateRoute(routeId, { coords: newCoords })
+          store.updateRoute(routeId, { coords: newCoords })
+          // 頂点に重なっているポイントを一緒に移動（約5m以内）
+          const eps = 0.00005
+          for (const pt of store.points) {
+            if (Math.abs(pt.lat - oldCoord.lat) < eps && Math.abs(pt.lng - oldCoord.lng) < eps) {
+              store.updatePoint(pt.id, { lat, lng })
+            }
+          }
         })
         vertexLayersRef.current.push(m)
       })
