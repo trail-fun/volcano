@@ -20,7 +20,7 @@ function recomputeSegmentsForRoute(route: Route, allPoints: Point[]): Segment[] 
   if (coords.length < 2) return []
   const n = coords.length - 1
 
-  const locationIdxs = allPoints
+  const snapped = allPoints
     .filter(p => p.type === 'location')
     .flatMap(p => {
       const snap = snapToRoute(p, coords, 100)
@@ -28,20 +28,25 @@ function recomputeSegmentsForRoute(route: Route, allPoints: Point[]): Segment[] 
       const idx = snap.ratio >= 0.5
         ? Math.min(snap.segmentIndex + 1, coords.length - 1)
         : snap.segmentIndex
-      return idx > 0 && idx < coords.length - 1 ? [idx] : []
+      return idx > 0 && idx < coords.length - 1 ? [{ idx, name: p.name }] : []
     })
-    .filter((v, i, arr) => arr.indexOf(v) === i)
-    .sort((a, b) => a - b)
+    .filter((v, i, arr) => arr.findIndex(x => x.idx === v.idx) === i)
+    .sort((a, b) => a.idx - b.idx)
 
-  const boundaries = [0, ...locationIdxs, n]
+  // idx → point name map (endpoints are スタート / フィニッシュ)
+  const idxToName = new Map<number, string>([[0, 'スタート'], [n, 'フィニッシュ']])
+  for (const { idx, name } of snapped) idxToName.set(idx, name)
+
+  const boundaries = [0, ...snapped.map(s => s.idx), n]
 
   return boundaries.slice(0, -1).map((start, i) => {
     const end = boundaries[i + 1]
     const existing = route.segments.find(s => s.startIndex === start && s.endIndex === end)
+    const defaultName = `${idxToName.get(start) ?? 'スタート'}〜${idxToName.get(end) ?? 'フィニッシュ'}`
     return {
       startIndex: start,
       endIndex: end,
-      name: existing?.name ?? '',
+      name: existing?.name || defaultName,
       courseTime: existing?.courseTime ?? '',
     }
   })
@@ -49,6 +54,7 @@ function recomputeSegmentsForRoute(route: Route, allPoints: Point[]): Segment[] 
 
 function parseTime(t: string): number {
   if (!t) return 0
+  if (!t.includes(':')) return parseInt(t) || 0  // 分のみ入力
   const parts = t.split(':').map(Number)
   return (parts[0] || 0) * 60 + (parts[1] || 0)
 }
@@ -57,6 +63,15 @@ function formatTime(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   return `${h}:${String(m).padStart(2, '0')}`
+}
+
+// 入力値を hh:mm 形式に正規化して保存
+function normalizeCourseTime(input: string): string {
+  const s = input.trim()
+  if (!s) return ''
+  if (/^\d+:[0-5]?\d$/.test(s)) return formatTime(parseTime(s))  // hh:mm
+  if (/^\d+$/.test(s)) return formatTime(parseInt(s))              // 分のみ
+  return s
 }
 
 type Props = { pendingLatLng: { lat: number; lng: number } | null; clearPending: () => void }
@@ -621,8 +636,9 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                 <button onClick={() => setEditSegmentIdx(null)} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
                 <button
                   onClick={() => {
+                    const normalized = normalizeCourseTime(editCourseTime)
                     const newSegs = segs.map((s, i) =>
-                      i === editSegmentIdx ? { ...s, name: editSegmentName, courseTime: editCourseTime } : s
+                      i === editSegmentIdx ? { ...s, name: editSegmentName, courseTime: normalized } : s
                     )
                     updateRoute(mainRoute.id, { segments: newSegs })
                     setEditSegmentIdx(null)
