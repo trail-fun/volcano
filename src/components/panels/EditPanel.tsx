@@ -48,6 +48,7 @@ function recomputeSegmentsForRoute(route: Route, allPoints: Point[]): Segment[] 
       endIndex: end,
       name: existing?.name || defaultName,
       courseTime: existing?.courseTime ?? '',
+      breakTime: existing?.breakTime ?? '',
     }
   })
 }
@@ -93,6 +94,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [editSegmentIdx, setEditSegmentIdx] = useState<number | null>(null)
   const [editSegmentName, setEditSegmentName] = useState('')
   const [editCourseTime, setEditCourseTime] = useState('')
+  const [editBreakTime, setEditBreakTime] = useState('')
   const [hiddenSections, setHiddenSections] = useState<Set<number>>(new Set())
 
   const [snapConfirm, setSnapConfirm] = useState<{
@@ -611,7 +613,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         <section>
           <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ 区間</div>
           <p className="text-xs text-gray-400 mb-1">「地点」ポイントをルート上に追加すると区間が分割されます</p>
-          {(mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '' }])
+          {(mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '', breakTime: '' }])
             .filter(seg => !isRangeHidden(seg.startIndex, seg.endIndex))
             .map((seg, i) => {
             const slice = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
@@ -633,6 +635,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                       setEditSegmentIdx(idx >= 0 ? idx : 0)
                       setEditSegmentName(seg.name)
                       setEditCourseTime(seg.courseTime)
+                      setEditBreakTime(seg.breakTime ?? '')
                     }} className="text-gray-400 hover:text-blue-500">編集</button>
                   )}
                 </div>
@@ -641,6 +644,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                   {descentM > 0 && <span className="text-blue-600">↓ {Math.round(descentM)} m</span>}
                   {ascentM > 0 && <span className="text-red-500">↑ {Math.round(ascentM)} m</span>}
                   {seg.courseTime && <span className="text-purple-600">⏱ {seg.courseTime}</span>}
+                  {seg.breakTime && <span className="text-orange-500">☕ {seg.breakTime}</span>}
                 </div>
               </div>
             )
@@ -720,13 +724,21 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                   onChange={e => setEditCourseTime(e.target.value)}
                   pattern="[0-9]+:[0-5][0-9]" />
               </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">休憩 (hh:mm)</label>
+                <input className="border rounded px-2 py-1 text-sm w-full font-mono" placeholder="0:00"
+                  value={editBreakTime}
+                  onChange={e => setEditBreakTime(e.target.value)}
+                  pattern="[0-9]+:[0-5][0-9]" />
+              </div>
               <div className="flex gap-2 justify-end">
                 <button onClick={() => setEditSegmentIdx(null)} className="text-sm px-3 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
                 <button
                   onClick={() => {
                     const normalized = normalizeCourseTime(editCourseTime)
+                    const normalizedBreak = normalizeCourseTime(editBreakTime)
                     const newSegs = segs.map((s, i) =>
-                      i === editSegmentIdx ? { ...s, name: editSegmentName, courseTime: normalized } : s
+                      i === editSegmentIdx ? { ...s, name: editSegmentName, courseTime: normalized, breakTime: normalizedBreak } : s
                     )
                     updateRoute(mainRoute.id, { segments: newSegs })
                     setEditSegmentIdx(null)

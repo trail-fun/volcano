@@ -62,7 +62,7 @@ function calcIntervals(
 function getDisplaySegments(segments: Segment[], coordCount: number): Segment[] {
   if (segments.length > 0) return segments
   if (coordCount < 2) return []
-  return [{ startIndex: 0, endIndex: coordCount - 1, name: 'コース全体', courseTime: '' }]
+  return [{ startIndex: 0, endIndex: coordCount - 1, name: 'コース全体', courseTime: '', breakTime: '' }]
 }
 
 // ─── メインパネル ─────────────────────────────────────────────────────────────
@@ -235,6 +235,7 @@ export default function OperationPanel() {
                   {descentM > 0 && <span className="text-blue-600">↓ {Math.round(descentM)} m</span>}
                   {ascentM > 0 && <span className="text-red-500">↑ {Math.round(ascentM)} m</span>}
                   {seg.courseTime && <span className="text-purple-600">⏱ {seg.courseTime}</span>}
+                  {seg.breakTime && <span className="text-orange-500">☕ {seg.breakTime}</span>}
                 </div>
               </div>
             )

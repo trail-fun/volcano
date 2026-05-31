@@ -21,6 +21,7 @@ export type Segment = {
   endIndex: number
   name: string
   courseTime: string  // hh:mm
+  breakTime: string   // hh:mm
 }
 
 export type Junction = {

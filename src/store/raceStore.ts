@@ -55,7 +55,7 @@ export const useRaceStore = create<RaceStore>((set, get) => ({
       gpxFile: 'course_main.gpx', coords,
       difficulty: 'medium', transportSuitability: ['walk', 'stretcher'],
       segments: coords.length >= 2
-        ? [{ startIndex: 0, endIndex: coords.length - 1, name: '', courseTime: '' }]
+        ? [{ startIndex: 0, endIndex: coords.length - 1, name: '', courseTime: '', breakTime: '' }]
         : [],
       junction: null,
     }
