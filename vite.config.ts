@@ -4,6 +4,6 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: '/trailrunning-rescue/',
+  base: '/volcano/',
   server: { host: true, allowedHosts: true },
 })
