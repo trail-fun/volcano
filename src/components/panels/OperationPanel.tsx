@@ -81,6 +81,23 @@ export default function OperationPanel() {
   const mainRoute = routes.find(r => r.type === 'course')
   const waterRoute = candidates[0] ?? null
 
+  // 水場までのコースタイム合計（区間のcourseTimeを合算）
+  const waterCourseTime = (() => {
+    if (!waterRoute || !mainRoute) return ''
+    const seg = waterRoute.segments[0]
+    if (!seg) return ''
+    const lo = Math.min(seg.fromIndex, seg.toIndex)
+    const hi = Math.max(seg.fromIndex, seg.toIndex)
+    const totalMins = mainRoute.segments
+      .filter(s => s.startIndex >= lo && s.endIndex <= hi)
+      .reduce((sum, s) => {
+        const parts = (s.courseTime || '').split(':').map(Number)
+        return sum + (parts[0] || 0) * 60 + (parts[1] || 0)
+      }, 0)
+    if (totalMins === 0) return ''
+    return `${Math.floor(totalMins / 60)}:${String(totalMins % 60).padStart(2, '0')}`
+  })()
+
   const sectionIntervals = mainRoute
     ? calcIntervals(snapLocationPoints(points, mainRoute, p => p.section), mainRoute)
     : []
@@ -136,6 +153,7 @@ export default function OperationPanel() {
                     <span className="text-gray-700">📏 {(waterRoute.totalDistanceM / 1000).toFixed(2)} km</span>
                     {waterRoute.totalDescentM > 0 && <span className="text-blue-600">↓ {Math.round(waterRoute.totalDescentM)} m</span>}
                     {waterRoute.totalAscentM > 0 && <span className="text-red-500">↑ {Math.round(waterRoute.totalAscentM)} m</span>}
+                    {waterCourseTime && <span className="text-purple-600">⏱ {waterCourseTime}</span>}
                   </div>
                 </div>
               )

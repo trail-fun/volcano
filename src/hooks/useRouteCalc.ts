@@ -158,22 +158,22 @@ export function calcWaterRoute(
       ? Math.min(wSnap.segmentIndex + 1, coords.length - 1)
       : wSnap.segmentIndex
 
-    const lo = Math.min(snapIdx, wIdx)
-    const hi = Math.max(snapIdx, wIdx)
-    const slice = coords.slice(lo, hi + 1)
-    const isForward = wIdx >= snapIdx
-    const pathCoords = isForward ? slice : [...slice].reverse()
+    // 前方のみ（競技者より先にある水場）
+    if (wIdx <= snapIdx) continue
+
+    const slice = coords.slice(snapIdx, wIdx + 1)
+    const pathCoords = slice
 
     const distM = pathCoords.reduce((s, _, i) => i === 0 ? s : s + haversine(pathCoords[i - 1], pathCoords[i]), 0)
     const { descentM, ascentM } = elevationStats(pathCoords)
 
     const c: RouteCandidate = {
       id: `water_${water.id}`,
-      label: isForward ? '前方' : '後方（引き返し）',
+      label: '前方',
       exitPointId: water.id,
       exitPointName: water.name,
       exitPointType: 'exit',
-      segments: [{ routeId: mainRoute.id, direction: isForward ? 'forward' : 'backward', fromIndex: snapIdx, toIndex: wIdx }],
+      segments: [{ routeId: mainRoute.id, direction: 'forward', fromIndex: snapIdx, toIndex: wIdx }],
       totalDistanceM: distM,
       totalDescentM: descentM,
       totalAscentM: ascentM,
