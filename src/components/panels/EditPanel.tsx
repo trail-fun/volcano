@@ -425,6 +425,55 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
     return sectionIntervals.some((si, i) => hiddenSections.has(i) && mid > si.fromCoordIdx && mid < si.toCoordIdx)
   }
 
+  const openElevationChart = (label: string, fromIdx: number, toIdx: number) => {
+    if (!mainRoute) return
+    const coords = mainRoute.coords.slice(fromIdx, toIdx + 1)
+    if (coords.length < 2) return
+    const dists: number[] = [0]
+    for (let i = 1; i < coords.length; i++) dists.push(dists[i - 1] + haversine(coords[i - 1], coords[i]))
+    const totalDist = dists[dists.length - 1] || 1
+    const eles = coords.map(c => c.ele)
+    const minEle = Math.min(...eles), maxEle = Math.max(...eles)
+    const eleRange = maxEle - minEle || 1
+    const W = 620, H = 220
+    const pl = 52, pr = 16, pt = 16, pb = 32
+    const iW = W - pl - pr, iH = H - pt - pb
+    const x = (i: number) => pl + (dists[i] / totalDist) * iW
+    const y = (e: number) => pt + (1 - (e - minEle) / eleRange) * iH
+    const linePts = coords.map((c, i) => `${x(i).toFixed(1)},${y(c.ele).toFixed(1)}`).join(' ')
+    const fillD = `M${x(0).toFixed(1)},${(pt + iH).toFixed(1)} ` +
+      coords.map((c, i) => `L${x(i).toFixed(1)},${y(c.ele).toFixed(1)}`).join(' ') +
+      ` L${(pl + iW).toFixed(1)},${(pt + iH).toFixed(1)} Z`
+    const totalKm = (totalDist / 1000).toFixed(2)
+    const tickCount = 5
+    const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => {
+      const e = minEle + (eleRange * i) / tickCount
+      return { e: Math.round(e), yv: y(e) }
+    })
+    const html = `<!DOCTYPE html><html lang="ja"><head>
+<meta charset="utf-8"><title>高低図 ${label}</title>
+<style>body{margin:12px;font-family:sans-serif;font-size:12px;background:#fff}h3{margin:0 0 8px;font-size:14px}</style>
+</head><body>
+<h3>📈 高低図 ${label}</h3>
+<svg width="${W}" height="${H}" style="display:block">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#f87171" stop-opacity="0.5"/>
+    <stop offset="100%" stop-color="#fecaca" stop-opacity="0.1"/>
+  </linearGradient></defs>
+  <path d="${fillD}" fill="url(#g)"/>
+  <polyline points="${linePts}" fill="none" stroke="#dc2626" stroke-width="1.5"/>
+  ${yTicks.map(t => `<line x1="${pl}" y1="${t.yv.toFixed(1)}" x2="${(pl + iW).toFixed(1)}" y2="${t.yv.toFixed(1)}" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="${(pl - 4).toFixed(1)}" y="${(t.yv + 4).toFixed(1)}" text-anchor="end" fill="#6b7280" font-size="10">${t.e}</text>`).join('')}
+  <text x="${(pl + iW / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" fill="#6b7280" font-size="11">距離 ${totalKm} km</text>
+  <text x="${pl}" y="${H - 4}" text-anchor="start" fill="#9ca3af" font-size="10">0</text>
+  <text x="${(pl + iW).toFixed(1)}" y="${H - 4}" text-anchor="end" fill="#9ca3af" font-size="10">${totalKm} km</text>
+</svg>
+<p style="color:#6b7280;margin:4px 0 0;font-size:11px">最低 ${Math.round(minEle)} m　最高 ${Math.round(maxEle)} m　標高差 ${Math.round(eleRange)} m</p>
+</body></html>`
+    const w = window.open('', '_blank', `width=${W + 40},height=${H + 80}`)
+    if (w) { w.document.write(html); w.document.close() }
+  }
+
   return (
     <div className="flex flex-col gap-3 h-full overflow-y-auto">
       {/* ツールバー */}
@@ -577,6 +626,11 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                       onClick={() => { if (!hidden && mainRoute) fitBounds(mainRoute.coords.slice(ci.fromCoordIdx, ci.toCoordIdx + 1)) }}
                       title="クリックで地図に表示"
                     >{ci.fromName} → {ci.toName}</span>
+                    <button
+                      onClick={() => openElevationChart(`${ci.fromName}→${ci.toName}`, ci.fromCoordIdx, ci.toCoordIdx)}
+                      className="text-xs text-gray-400 hover:text-green-600"
+                      title="高低図を表示"
+                    >📈</button>
                     <button
                       onClick={() => { setEditSectionForCP({ fromCoordIdx: ci.fromCoordIdx, toCoordIdx: ci.toCoordIdx, fromName: ci.fromName, toName: ci.toName }); setEditSectionMultiplier('1.0') }}
                       className="text-xs text-gray-400 hover:text-blue-500"
