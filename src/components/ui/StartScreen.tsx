@@ -3,7 +3,10 @@ import { useRaceStore } from '../../store/raceStore'
 import { useAuthStore } from '../../store/authStore'
 import { useProjectStore } from '../../store/projectStore'
 import { useModeStore } from '../../store/modeStore'
+import AdminPanel from './AdminPanel'
 import type { ProjectMeta } from '../../store/projectStore'
+
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string
 
 export default function StartScreen() {
   const gpxRef = useRef<HTMLInputElement>(null)
@@ -14,6 +17,8 @@ export default function StartScreen() {
   const { projects, fetchProjects, loadProject, deleteProject } = useProjectStore()
   const [showProjects, setShowProjects] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [showAdmin, setShowAdmin] = useState(false)
+  const isAdmin = user?.email === ADMIN_EMAIL
 
   useEffect(() => {
     if (showProjects) fetchProjects()
@@ -111,11 +116,18 @@ export default function StartScreen() {
           </div>
         )}
 
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <span>{user?.email}</span>
-          <button onClick={signOut} className="hover:text-gray-600 underline">ログアウト</button>
+        <div className="flex items-center justify-between w-full text-xs text-gray-400">
+          <span className="truncate">{user?.email}</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {isAdmin && (
+              <button onClick={() => setShowAdmin(true)} className="hover:text-indigo-600">👤 ユーザー管理</button>
+            )}
+            <button onClick={signOut} className="hover:text-gray-600 underline">ログアウト</button>
+          </div>
         </div>
       </div>
+
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
 
       <input ref={gpxRef} type="file" accept=".gpx,application/octet-stream,application/xml,text/xml" className="hidden" onChange={handleGpx} />
       <input ref={zipRef} type="file" accept=".zip,application/zip,application/octet-stream" className="hidden" onChange={handleZip} />
