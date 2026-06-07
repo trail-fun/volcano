@@ -2,26 +2,18 @@ import { useState } from 'react'
 import { useAuthStore } from '../../store/authStore'
 
 export default function LoginScreen() {
-  const { signIn, signUp } = useAuthStore()
+  const { signIn } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [isSignUp, setIsSignUp] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const submit = async () => {
-    setError(null); setInfo(null)
+    setError(null)
     if (!email || !password) { setError('メールアドレスとパスワードを入力してください'); return }
     setLoading(true)
-    if (isSignUp) {
-      const err = await signUp(email, password)
-      if (err) setError(err)
-      else setInfo('確認メールを送信しました。メールのリンクをクリックしてください。')
-    } else {
-      const err = await signIn(email, password)
-      if (err) setError('メールアドレスまたはパスワードが違います')
-    }
+    const err = await signIn(email, password)
+    if (err) setError('メールアドレスまたはパスワードが違います')
     setLoading(false)
   }
 
@@ -31,7 +23,7 @@ export default function LoginScreen() {
         <div className="text-center">
           <div className="text-5xl mb-3">🌋</div>
           <h1 className="text-2xl font-bold text-green-900">VOLCANO</h1>
-          <p className="text-sm text-gray-500 mt-1">{isSignUp ? 'アカウント作成' : 'ログイン'}</p>
+          <p className="text-sm text-gray-500 mt-1">ログイン</p>
         </div>
 
         <div className="flex flex-col gap-3 w-full">
@@ -52,22 +44,14 @@ export default function LoginScreen() {
             onKeyDown={e => e.key === 'Enter' && submit()}
           />
           {error && <p className="text-xs text-red-500">{error}</p>}
-          {info && <p className="text-xs text-green-600">{info}</p>}
           <button
             onClick={submit}
             disabled={loading}
             className="w-full py-3 bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white rounded-xl font-semibold transition"
           >
-            {loading ? '処理中…' : isSignUp ? 'アカウント作成' : 'ログイン'}
+            {loading ? '処理中…' : 'ログイン'}
           </button>
         </div>
-
-        <button
-          onClick={() => { setIsSignUp(!isSignUp); setError(null); setInfo(null) }}
-          className="text-xs text-gray-400 hover:text-gray-600"
-        >
-          {isSignUp ? 'すでにアカウントをお持ちの方はログイン' : 'アカウントをお持ちでない方は新規登録'}
-        </button>
       </div>
     </div>
   )

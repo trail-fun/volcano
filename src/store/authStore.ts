@@ -7,7 +7,6 @@ type AuthStore = {
   loading: boolean
   init: () => void
   signIn: (email: string, password: string) => Promise<string | null>
-  signUp: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
 }
 
@@ -26,11 +25,6 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   signIn: async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return error ? error.message : null
-  },
-
-  signUp: async (email, password) => {
-    const { error } = await supabase.auth.signUp({ email, password })
     return error ? error.message : null
   },
 
