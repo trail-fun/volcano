@@ -1,7 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRaceStore } from './store/raceStore'
 import { useModeStore } from './store/modeStore'
+import { useAuthStore } from './store/authStore'
 import StartScreen from './components/ui/StartScreen'
+import LoginScreen from './components/ui/LoginScreen'
 import ModeToggle from './components/ui/ModeToggle'
 import MapView from './components/map/MapView'
 import EditPanel from './components/panels/EditPanel'
@@ -11,13 +13,22 @@ import './index.css'
 export default function App() {
   const { race } = useRaceStore()
   const { mode } = useModeStore()
+  const { user, loading, init } = useAuthStore()
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useEffect(() => { init() }, [])
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     setPendingLatLng({ lat, lng })
   }, [])
 
+  if (loading) return (
+    <div className="fixed inset-0 bg-green-950 flex items-center justify-center">
+      <span className="text-white text-2xl">🌋</span>
+    </div>
+  )
+  if (!user) return <LoginScreen />
   if (!race) return <StartScreen />
 
   return (

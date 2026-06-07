@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { useRaceStore } from '../../store/raceStore'
+import { useProjectStore } from '../../store/projectStore'
 import { useModeStore } from '../../store/modeStore'
 import { useDrawingStore } from '../../store/drawingStore'
 import { useMapStore } from '../../store/mapStore'
@@ -101,6 +102,8 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [editSectionForCP, setEditSectionForCP] = useState<{ fromCoordIdx: number; toCoordIdx: number; fromName: string; toName: string } | null>(null)
   const [editSectionMultiplier, setEditSectionMultiplier] = useState('1.0')
   const [showGeoDialog, setShowGeoDialog] = useState(false)
+  const [cloudSaveMsg, setCloudSaveMsg] = useState<string | null>(null)
+  const { saveProject, saving } = useProjectStore()
   const [geoText, setGeoText] = useState('')
 
   const [snapConfirm, setSnapConfirm] = useState<{
@@ -878,10 +881,24 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       })()}
 
       {/* 保存 */}
-      <button onClick={exportToZip}
-        className="mt-auto w-full py-2 bg-green-700 hover:bg-green-600 text-white rounded-lg font-semibold text-sm transition">
-        💾 ZIPで保存
-      </button>
+      <div className="mt-auto flex flex-col gap-1.5">
+        {cloudSaveMsg && <p className="text-xs text-center text-green-600">{cloudSaveMsg}</p>}
+        <button
+          onClick={async () => {
+            const err = await saveProject(race?.name || '無題', { race, routes, points })
+            setCloudSaveMsg(err ? `エラー: ${err}` : '☁️ 保存しました')
+            setTimeout(() => setCloudSaveMsg(null), 3000)
+          }}
+          disabled={saving}
+          className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg font-semibold text-sm transition"
+        >
+          {saving ? '保存中…' : '☁️ クラウドに保存'}
+        </button>
+        <button onClick={exportToZip}
+          className="w-full py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg font-semibold text-xs transition">
+          💾 ZIPで保存
+        </button>
+      </div>
 
       {/* CP区間 倍率編集ダイアログ */}
       {editCPInterval && (
