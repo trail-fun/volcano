@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useRaceStore } from '../../store/raceStore'
 import { useAuthStore } from '../../store/authStore'
 import { useProjectStore } from '../../store/projectStore'
+import { useModeStore } from '../../store/modeStore'
 import type { ProjectMeta } from '../../store/projectStore'
 
 export default function StartScreen() {
@@ -9,6 +10,7 @@ export default function StartScreen() {
   const zipRef = useRef<HTMLInputElement>(null)
   const { loadFromGpx, loadFromZip, race, routes, points } = useRaceStore()
   const { user, signOut } = useAuthStore()
+  const { setMode } = useModeStore()
   const { projects, fetchProjects, loadProject, deleteProject } = useProjectStore()
   const [showProjects, setShowProjects] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -23,7 +25,7 @@ export default function StartScreen() {
   }
   const handleZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f) { await loadFromZip(f); e.target.value = '' }
+    if (f) { await loadFromZip(f); setMode('operation'); e.target.value = '' }
   }
 
   const handleLoadProject = async (p: ProjectMeta) => {
@@ -35,6 +37,7 @@ export default function StartScreen() {
       routes: (d.routes as typeof routes) ?? [],
       points: (d.points as typeof points) ?? [],
     })
+    setMode('operation')
     setShowProjects(false)
   }
 
