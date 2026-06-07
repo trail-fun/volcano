@@ -100,6 +100,8 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [editCPMultiplier, setEditCPMultiplier] = useState('1.0')
   const [editSectionForCP, setEditSectionForCP] = useState<{ fromCoordIdx: number; toCoordIdx: number; fromName: string; toName: string } | null>(null)
   const [editSectionMultiplier, setEditSectionMultiplier] = useState('1.0')
+  const [showGeoDialog, setShowGeoDialog] = useState(false)
+  const [geoText, setGeoText] = useState('')
 
   const [snapConfirm, setSnapConfirm] = useState<{
     original: { lat: number; lng: number }
@@ -258,6 +260,42 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
     setPointPos(null)
     clearPending()
     setActiveTool('none')
+  }
+
+  const saveGeoPoint = () => {
+    const lines = geoText.split('\n').map(l => l.trim()).filter(l => l)
+    let markerLabel = '', name = '', lat = NaN, lng = NaN
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      const markerMatch = line.match(/^マーカー[：:](.+)/)
+      if (markerMatch) { markerLabel = markerMatch[1].trim(); continue }
+      const memoMatch = line.match(/^メモ[：:](.*)/)
+      if (memoMatch) {
+        name = memoMatch[1].trim()
+        const next = lines[i + 1] ?? ''
+        const coords = next.match(/([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)/)
+        if (coords) { lat = parseFloat(coords[1]); lng = parseFloat(coords[2]) }
+        continue
+      }
+    }
+    if (isNaN(lat) || isNaN(lng)) return
+    const matchedType = (Object.entries(POINT_LABELS) as [PointType, string][])
+      .find(([, label]) => label === markerLabel)
+    const type: PointType = matchedType ? matchedType[0] : 'custom'
+    const point: Point = {
+      id: crypto.randomUUID(), lat, lng, type,
+      name: name || markerLabel, note: '', cp: false, section: false, enabled: true, photos: [],
+    }
+    const mr = routes.find(r => r.type === 'course')
+    if (point.type === 'location' && mr) {
+      const newPoints = [...points, point]
+      addPoint(point)
+      updateRoute(mr.id, { segments: recomputeSegmentsForRoute(mr, newPoints) })
+    } else {
+      addPoint(point)
+    }
+    setGeoText('')
+    setShowGeoDialog(false)
   }
 
   const handleDeletePoint = (pointId: string) => {
@@ -740,12 +778,18 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       {/* ポイント追加 */}
       <section>
         <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ ポイント</div>
-        <button
-          onClick={() => setActiveTool(activeTool === 'add_point' ? 'none' : 'add_point')}
-          className={`text-xs px-3 py-1.5 rounded font-semibold transition w-full mb-2 ${activeTool === 'add_point' ? 'bg-green-600 text-white' : 'bg-green-100 hover:bg-green-200 text-green-700'}`}
-        >
-          {activeTool === 'add_point' ? '📍 地図をクリックして追加中…' : '＋ ポイントを追加'}
-        </button>
+        <div className="flex gap-1 mb-2">
+          <button
+            onClick={() => setActiveTool(activeTool === 'add_point' ? 'none' : 'add_point')}
+            className={`text-xs px-2 py-1.5 rounded font-semibold transition flex-1 ${activeTool === 'add_point' ? 'bg-green-600 text-white' : 'bg-green-100 hover:bg-green-200 text-green-700'}`}
+          >
+            {activeTool === 'add_point' ? '📍 追加中…' : '＋ ポイント追加（地図上）'}
+          </button>
+          <button
+            onClick={() => { setShowGeoDialog(true); setGeoText('') }}
+            className="text-xs px-2 py-1.5 rounded font-semibold transition bg-teal-100 hover:bg-teal-200 text-teal-700 whitespace-nowrap"
+          >＋ ポイント追加（ジオグラフィカ）</button>
+        </div>
 
         {points.map(pt => (
           <div key={pt.id}
@@ -931,6 +975,31 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
             </div>
             <button onClick={() => { setSnapConfirm(null); clearPending() }}
               className="text-xs text-gray-400 hover:text-gray-600 text-center">キャンセル</button>
+          </div>
+        </div>
+      )}
+
+      {/* ジオグラフィカ ポイント追加ダイアログ */}
+      {showGeoDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-5 w-96 flex flex-col gap-3">
+            <div className="font-bold text-gray-800 text-sm">＋ ポイント追加（ジオグラフィカ）</div>
+            <p className="text-xs text-gray-500">ジオグラフィカのマーカー情報をペーストしてください。</p>
+            <textarea
+              className="border rounded px-2 py-1.5 text-xs font-mono h-36 resize-none focus:outline-none focus:ring-1 focus:ring-teal-400"
+              placeholder={"マーカー:水場\n高度1,777m\nメモ:沢水\n37.763870 140.194537"}
+              value={geoText}
+              onChange={e => setGeoText(e.target.value)}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowGeoDialog(false)} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+              <button
+                onClick={saveGeoPoint}
+                disabled={!geoText.trim()}
+                className="text-sm px-4 py-1.5 bg-teal-600 text-white rounded hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >OK</button>
+            </div>
           </div>
         </div>
       )}
