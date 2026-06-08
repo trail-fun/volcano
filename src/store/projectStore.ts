@@ -12,6 +12,7 @@ type ProjectStore = {
   saving: boolean
   fetchProjects: () => Promise<void>
   saveProject: (name: string, data: object) => Promise<string | null>
+  updateProject: (id: string, name: string, data: object) => Promise<string | null>
   loadProject: (id: string) => Promise<object | null>
   deleteProject: (id: string) => Promise<void>
 }
@@ -32,12 +33,18 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     set({ saving: true })
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { set({ saving: false }); return 'ログインが必要です' }
-    const { error } = await supabase.from('projects').upsert({
-      name,
-      data,
-      user_id: user.id,
-      updated_at: new Date().toISOString(),
+    const { error } = await supabase.from('projects').insert({
+      name, data, user_id: user.id, updated_at: new Date().toISOString(),
     })
+    set({ saving: false })
+    return error ? error.message : null
+  },
+
+  updateProject: async (id, name, data) => {
+    set({ saving: true })
+    const { error } = await supabase.from('projects')
+      .update({ name, data, updated_at: new Date().toISOString() })
+      .eq('id', id)
     set({ saving: false })
     return error ? error.message : null
   },

@@ -102,7 +102,7 @@ export default function StartScreen() {
                   >
                     {p.name || '無題'}
                     <span className="ml-2 text-xs text-gray-400 font-normal">
-                      {new Date(p.updated_at).toLocaleDateString('ja-JP')}
+                      {new Date(p.updated_at).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </button>
                   <button

@@ -107,7 +107,8 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [showSegList, setShowSegList] = useState(false)
   const [showPointList, setShowPointList] = useState(false)
   const [cloudSaveMsg, setCloudSaveMsg] = useState<string | null>(null)
-  const { saveProject, saving } = useProjectStore()
+  const [overwriteTarget, setOverwriteTarget] = useState<{ id: string; name: string } | null>(null)
+  const { saveProject, updateProject, fetchProjects, projects, saving } = useProjectStore()
   const [geoText, setGeoText] = useState('')
 
   const [snapConfirm, setSnapConfirm] = useState<{
@@ -913,9 +914,16 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
         {cloudSaveMsg && <p className="text-xs text-center text-green-600">{cloudSaveMsg}</p>}
         <button
           onClick={async () => {
-            const err = await saveProject(race?.name || '無題', { race, routes, points })
-            setCloudSaveMsg(err ? `エラー: ${err}` : '☁️ 保存しました')
-            setTimeout(() => setCloudSaveMsg(null), 3000)
+            const name = race?.name || '無題'
+            await fetchProjects()
+            const existing = projects.find(p => p.name === name)
+            if (existing) {
+              setOverwriteTarget({ id: existing.id, name: existing.name })
+            } else {
+              const err = await saveProject(name, { race, routes, points })
+              setCloudSaveMsg(err ? `エラー: ${err}` : '☁️ 保存しました')
+              setTimeout(() => setCloudSaveMsg(null), 3000)
+            }
           }}
           disabled={saving}
           className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg font-semibold text-sm transition"
@@ -927,6 +935,34 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
           💾 ZIPで保存
         </button>
       </div>
+
+      {/* 上書き確認ダイアログ */}
+      {overwriteTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl p-5 w-80 flex flex-col gap-3">
+            <div className="font-bold text-gray-800 text-sm">上書き確認</div>
+            <p className="text-sm text-gray-600">
+              「{overwriteTarget.name}」は既に保存されています。上書きしますか？
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setOverwriteTarget(null)}
+                className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50"
+              >キャンセル</button>
+              <button
+                onClick={async () => {
+                  const name = race?.name || '無題'
+                  const err = await updateProject(overwriteTarget.id, name, { race, routes, points })
+                  setOverwriteTarget(null)
+                  setCloudSaveMsg(err ? `エラー: ${err}` : '☁️ 上書き保存しました')
+                  setTimeout(() => setCloudSaveMsg(null), 3000)
+                }}
+                className="text-sm px-4 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-500 transition"
+              >上書き保存</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CP区間 倍率編集ダイアログ */}
       {editCPInterval && (
