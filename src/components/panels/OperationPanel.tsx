@@ -5,7 +5,7 @@ import { useMapStore } from '../../store/mapStore'
 import { calcWaterRoute } from '../../hooks/useRouteCalc'
 import { haversine, snapToRoute, elevationStats } from '../../utils/geo'
 import { POINT_ICONS } from '../map/mapStyles'
-import type { Route, Point, Segment } from '../../types/race'
+import type { Route, Point } from '../../types/race'
 
 // ─── Segment interval 計算（EditPanel と共通ロジック） ────────────────────────
 
@@ -59,11 +59,6 @@ function calcIntervals(
   })
 }
 
-function getDisplaySegments(segments: Segment[], coordCount: number): Segment[] {
-  if (segments.length > 0) return segments
-  if (coordCount < 2) return []
-  return [{ startIndex: 0, endIndex: coordCount - 1, name: 'コース全体', courseTime: '', breakTime: '' }]
-}
 
 // ─── メインパネル ─────────────────────────────────────────────────────────────
 
@@ -154,6 +149,17 @@ export default function OperationPanel() {
     const w = window.open('', '_blank', `width=${W + 40},height=${H + 80}`)
     if (w) { w.document.write(html); w.document.close() }
   }
+
+  const [showSectionList, setShowSectionList] = useState(true)
+  const [expandedSectionCPs, setExpandedSectionCPs] = useState<Set<number>>(new Set())
+  const [expandedCPSegs, setExpandedCPSegs] = useState<Set<string>>(new Set())
+
+  const toggleSectionCP = (i: number) => setExpandedSectionCPs(prev => {
+    const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next
+  })
+  const toggleCPSeg = (key: string) => setExpandedCPSegs(prev => {
+    const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next
+  })
 
   const openRacePlan = () => {
     const startDate = parseStartDateTime(race?.startTime || '')
@@ -338,97 +344,134 @@ ${startInfo}
 
       <hr className="border-gray-200" />
 
-      {/* Section */}
+      {/* Section → CP区間 → 区間 (階層構造) */}
       {mainRoute && (
         <section>
-          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ Section</div>
-          {sectionIntervals.length === 0
-            ? <p className="text-xs text-gray-400">Sectionポイント属性のある「地点」がありません</p>
-            : sectionIntervals.map((ci, i) => {
-              const hidden = hiddenSections.has(i)
-              return (
-                <div key={i} className={`py-1 border-b last:border-0 border-gray-100 ${hidden ? 'opacity-40' : ''}`}>
-                  <div className="flex items-center gap-1.5 -mx-1 px-1">
-                    <span
-                      className="text-xs font-semibold text-gray-700 flex-1 cursor-pointer hover:text-blue-600 select-none"
-                      onClick={() => { if (!hidden) fitBounds(mainRoute.coords.slice(ci.fromCoordIdx, ci.toCoordIdx + 1)) }}
-                      title="クリックで地図に表示"
-                    >{ci.fromName} → {ci.toName}</span>
-                    <button
-                      onClick={() => openElevationChart(`${ci.fromName}→${ci.toName}`, ci.fromCoordIdx, ci.toCoordIdx)}
-                      className="text-xs text-gray-400 hover:text-green-600"
-                      title="高低図を表示"
-                    >📈</button>
-                    <button
-                      onClick={() => toggleSection(i)}
-                      className={`text-xs px-1.5 py-0.5 rounded border transition ${hidden ? 'border-gray-300 text-gray-400 bg-gray-100' : 'border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
-                    >{hidden ? '非表示' : '表示'}</button>
-                  </div>
-                  {!hidden && (
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
-                      <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
-                      {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
-                      {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
-                      {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
+          {/* Section ヘッダー */}
+          <button
+            className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
+            onClick={() => setShowSectionList(v => !v)}
+          >
+            <span>{showSectionList ? '▼' : '▶'}</span>
+            <span>Section</span>
+          </button>
+
+          {showSectionList && (
+            sectionIntervals.length === 0
+              ? <p className="text-xs text-gray-400">Sectionポイント属性のある「地点」がありません</p>
+              : sectionIntervals.map((si, i) => {
+                const hidden = hiddenSections.has(i)
+                const cpExpanded = expandedSectionCPs.has(i)
+                const cpsInSection = cpSection.filter(cp =>
+                  cp.fromCoordIdx >= si.fromCoordIdx && cp.toCoordIdx <= si.toCoordIdx
+                )
+                return (
+                  <div key={i} className={`border-b last:border-0 border-gray-100 py-1 ${hidden ? 'opacity-40' : ''}`}>
+                    {/* Section 行 */}
+                    <div className="flex items-center gap-1.5 -mx-1 px-1">
+                      <span
+                        className="text-xs font-semibold text-gray-700 flex-1 cursor-pointer hover:text-blue-600 select-none truncate"
+                        onClick={() => { if (!hidden) fitBounds(mainRoute.coords.slice(si.fromCoordIdx, si.toCoordIdx + 1)) }}
+                        title="クリックで地図に表示"
+                      >{si.fromName} → {si.toName}</span>
+                      <button onClick={() => openElevationChart(`${si.fromName}→${si.toName}`, si.fromCoordIdx, si.toCoordIdx)} className="text-xs text-gray-400 hover:text-green-600" title="高低図">📈</button>
+                      <button
+                        onClick={() => toggleSection(i)}
+                        className={`text-xs px-1.5 py-0.5 rounded border transition flex-shrink-0 ${hidden ? 'border-gray-300 text-gray-400 bg-gray-100' : 'border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
+                      >{hidden ? '非表示' : '表示'}</button>
                     </div>
-                  )}
-                </div>
-              )
-            })
-          }
-        </section>
-      )}
+                    {!hidden && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5 ml-1">
+                        <span className="text-gray-600">📏 {si.distKm.toFixed(2)} km</span>
+                        {si.descentM > 0 && <span className="text-blue-600">↓ {Math.round(si.descentM)} m</span>}
+                        {si.ascentM > 0 && <span className="text-red-500">↑ {Math.round(si.ascentM)} m</span>}
+                        {si.courseTime && <span className="text-purple-600">⏱ {si.courseTime}</span>}
+                      </div>
+                    )}
 
-      {/* CP区間 */}
-      {mainRoute && cpSection.length > 0 && (
-        <section>
-          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ CP区間</div>
-          {cpSection.map((ci, i) => (
-            <div
-              key={i}
-              className="py-1 border-b last:border-0 border-gray-100 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
-              onClick={() => fitBounds(mainRoute.coords.slice(ci.fromCoordIdx, ci.toCoordIdx + 1))}
-              title="クリックで地図に表示"
-            >
-              <div className="text-xs font-semibold text-gray-700">{ci.fromName} → {ci.toName}</div>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
-                <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
-                {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
-                {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
-                {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
-              </div>
-            </div>
-          ))}
-        </section>
-      )}
+                    {/* ▶ CP区間 トグル */}
+                    {!hidden && cpsInSection.length > 0 && (
+                      <button
+                        className="flex items-center gap-0.5 text-xs text-gray-500 hover:text-indigo-600 mt-1 ml-2 select-none transition"
+                        onClick={() => toggleSectionCP(i)}
+                      >
+                        <span>{cpExpanded ? '▼' : '▶'}</span>
+                        <span>CP区間</span>
+                      </button>
+                    )}
 
-      {/* 区間 */}
-      {mainRoute && (
-        <section>
-          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ 区間</div>
-          {getDisplaySegments(mainRoute.segments, mainRoute.coords.length).map((seg, i) => {
-            const slice = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
-            let distM = 0
-            for (let j = 1; j < slice.length; j++) distM += haversine(slice[j - 1], slice[j])
-            const { descentM, ascentM } = elevationStats(slice)
-            return (
-              <div
-                key={i}
-                className="py-1 border-b last:border-0 border-gray-100 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
-                onClick={() => fitBounds(slice)}
-                title="クリックで地図に表示"
-              >
-                <div className="text-xs font-semibold text-gray-700">{seg.name || `区間 ${i + 1}`}</div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
-                  <span className="text-gray-600">📏 {(distM / 1000).toFixed(2)} km</span>
-                  {descentM > 0 && <span className="text-blue-600">↓ {Math.round(descentM)} m</span>}
-                  {ascentM > 0 && <span className="text-red-500">↑ {Math.round(ascentM)} m</span>}
-                  {seg.courseTime && <span className="text-purple-600">⏱ {seg.courseTime}</span>}
-                  {seg.breakTime && <span className="text-orange-500">☕ {seg.breakTime}</span>}
-                </div>
-              </div>
-            )
-          })}
+                    {/* CP区間リスト */}
+                    {!hidden && cpExpanded && (
+                      <div className="ml-4 mt-0.5">
+                        {cpsInSection.map((ci, j) => {
+                          const cpKey = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
+                          const segExpanded = expandedCPSegs.has(cpKey)
+                          const segsInCP = mainRoute.segments.filter(
+                            s => s.startIndex >= ci.fromCoordIdx && s.endIndex <= ci.toCoordIdx
+                          )
+                          return (
+                            <div key={j} className="border-b last:border-0 border-gray-100 py-1">
+                              {/* CP区間 行 */}
+                              <div
+                                className="text-xs font-semibold text-gray-700 cursor-pointer hover:text-blue-600 select-none"
+                                onClick={() => fitBounds(mainRoute.coords.slice(ci.fromCoordIdx, ci.toCoordIdx + 1))}
+                                title="クリックで地図に表示"
+                              >{ci.fromName} → {ci.toName}</div>
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
+                                <span className="text-gray-600">📏 {ci.distKm.toFixed(2)} km</span>
+                                {ci.descentM > 0 && <span className="text-blue-600">↓ {Math.round(ci.descentM)} m</span>}
+                                {ci.ascentM > 0 && <span className="text-red-500">↑ {Math.round(ci.ascentM)} m</span>}
+                                {ci.courseTime && <span className="text-purple-600">⏱ {ci.courseTime}</span>}
+                              </div>
+
+                              {/* ▶ 区間 トグル */}
+                              {segsInCP.length > 0 && (
+                                <button
+                                  className="flex items-center gap-0.5 text-xs text-gray-500 hover:text-indigo-600 mt-1 ml-2 select-none transition"
+                                  onClick={() => toggleCPSeg(cpKey)}
+                                >
+                                  <span>{segExpanded ? '▼' : '▶'}</span>
+                                  <span>区間</span>
+                                </button>
+                              )}
+
+                              {/* 区間リスト */}
+                              {segExpanded && (
+                                <div className="ml-4 mt-0.5">
+                                  {segsInCP.map((seg, k) => {
+                                    const slice = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
+                                    let distM = 0
+                                    for (let m = 1; m < slice.length; m++) distM += haversine(slice[m - 1], slice[m])
+                                    const { descentM, ascentM } = elevationStats(slice)
+                                    return (
+                                      <div
+                                        key={k}
+                                        className="py-1 border-b last:border-0 border-gray-100 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
+                                        onClick={() => fitBounds(slice)}
+                                        title="クリックで地図に表示"
+                                      >
+                                        <div className="text-xs font-semibold text-gray-700">{seg.name || `区間 ${k + 1}`}</div>
+                                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-mono mt-0.5">
+                                          <span className="text-gray-600">📏 {(distM / 1000).toFixed(2)} km</span>
+                                          {descentM > 0 && <span className="text-blue-600">↓ {Math.round(descentM)} m</span>}
+                                          {ascentM > 0 && <span className="text-red-500">↑ {Math.round(ascentM)} m</span>}
+                                          {seg.courseTime && <span className="text-purple-600">⏱ {seg.courseTime}</span>}
+                                          {seg.breakTime && <span className="text-orange-500">☕ {seg.breakTime}</span>}
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+          )}
         </section>
       )}
 
