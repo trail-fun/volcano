@@ -144,17 +144,17 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     for (const pt of points) {
       if (isInHiddenRange(pt.lat, pt.lng)) continue
       const opacity = !pt.enabled ? 0.35 : dimmed ? 0.3 : 1
+      const popupContent = `<b>${pt.name}</b>${
+        pt.type === 'location' && (pt.cp || pt.section)
+          ? ` <span style="color:#dc2626;font-size:10px">${[pt.cp ? 'CP' : '', pt.section ? 'S' : ''].filter(Boolean).join(' ')}</span>`
+          : ''
+      }${pt.note ? `<br><span style="font-size:11px;color:#555">${pt.note}</span>` : ''}`
       if (pt.type === 'location') {
-        const badges = [pt.cp ? 'CP' : '', pt.section ? 'S' : ''].filter(Boolean).join(' ')
         const m = L.circleMarker([pt.lat, pt.lng], {
-          radius: 7,
-          color: '#dc2626',
-          fillColor: 'white',
-          fillOpacity: 1,
-          weight: 2.5,
-          opacity,
+          radius: 7, color: '#dc2626', fillColor: 'white', fillOpacity: 1, weight: 2.5, opacity,
         }).addTo(map)
-        if (!dimmed) m.bindPopup(`<b>${pt.name}</b>${badges ? ` <span style="color:#dc2626;font-size:10px">${badges}</span>` : ''}<br><span style="font-size:11px">${pt.note || ''}</span>`)
+        m.bindPopup(popupContent)
+        m.on('click', e => { e.originalEvent.stopPropagation(); m.openPopup() })
         layersRef.current.push(m)
       } else {
         const icon = L.divIcon({
@@ -162,7 +162,8 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
           iconSize: [28, 28], iconAnchor: [14, 14], className: '',
         })
         const marker = L.marker([pt.lat, pt.lng], { icon }).addTo(map)
-        if (!dimmed) marker.bindPopup(`<b>${pt.name}</b><br><span style="font-size:11px">${pt.note || ''}</span>`)
+        marker.bindPopup(popupContent)
+        marker.on('click', e => { e.originalEvent.stopPropagation(); marker.openPopup() })
         layersRef.current.push(marker)
       }
     }
