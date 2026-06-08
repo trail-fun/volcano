@@ -102,6 +102,10 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [editSectionForCP, setEditSectionForCP] = useState<{ fromCoordIdx: number; toCoordIdx: number; fromName: string; toName: string } | null>(null)
   const [editSectionMultiplier, setEditSectionMultiplier] = useState('1.0')
   const [showGeoDialog, setShowGeoDialog] = useState(false)
+  const [showSectionList, setShowSectionList] = useState(false)
+  const [showCPList, setShowCPList] = useState(false)
+  const [showSegList, setShowSegList] = useState(false)
+  const [showPointList, setShowPointList] = useState(false)
   const [cloudSaveMsg, setCloudSaveMsg] = useState<string | null>(null)
   const { saveProject, saving } = useProjectStore()
   const [geoText, setGeoText] = useState('')
@@ -654,8 +658,14 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
       {/* Section */}
       {mainRoute && (
         <section>
-          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ Section</div>
-          {sectionIntervals.length === 0
+          <button
+            className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
+            onClick={() => setShowSectionList(v => !v)}
+          >
+            <span>{showSectionList ? '▼' : '▶'}</span>
+            <span>Section</span>
+          </button>
+          {showSectionList && (sectionIntervals.length === 0
             ? <p className="text-xs text-gray-400">Sectionポイント属性のある「地点」がありません</p>
             : sectionIntervals.map((ci, i) => {
               const hidden = hiddenSections.has(i)
@@ -692,15 +702,21 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                 </div>
               )
             })
-          }
+          )}
         </section>
       )}
 
       {/* CP区間 — hiddenSectionsに含まれる範囲は非表示 */}
       {mainRoute && cpSection.some(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)) && (
         <section>
-          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ CP区間</div>
-          {cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).length === 0
+          <button
+            className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
+            onClick={() => setShowCPList(v => !v)}
+          >
+            <span>{showCPList ? '▼' : '▶'}</span>
+            <span>CP区間</span>
+          </button>
+          {showCPList && (cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).length === 0
             ? <p className="text-xs text-gray-400">CP属性のある「地点」がありません</p>
             : cpSection.filter(ci => !isRangeHidden(ci.fromCoordIdx, ci.toCoordIdx)).map((ci, i) => {
               const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
@@ -728,16 +744,22 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
                 </div>
               )
             })
-          }
+          )}
         </section>
       )}
 
       {/* 区間 — hiddenSectionsに含まれる範囲は非表示 */}
       {mainRoute && (
         <section>
-          <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ 区間</div>
-          <p className="text-xs text-gray-400 mb-1">「地点」ポイントをルート上に追加すると区間が分割されます</p>
-          {(mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '', breakTime: '' }])
+          <button
+            className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
+            onClick={() => setShowSegList(v => !v)}
+          >
+            <span>{showSegList ? '▼' : '▶'}</span>
+            <span>区間</span>
+          </button>
+          {showSegList && <p className="text-xs text-gray-400 mb-1">「地点」ポイントをルート上に追加すると区間が分割されます</p>}
+          {showSegList && (mainRoute.segments.length > 0 ? mainRoute.segments : [{ startIndex: 0, endIndex: mainRoute.coords.length - 1, name: '', courseTime: '', breakTime: '' }])
             .filter(seg => !isRangeHidden(seg.startIndex, seg.endIndex))
             .map((seg, i) => {
             const slice = mainRoute.coords.slice(seg.startIndex, seg.endIndex + 1)
@@ -780,7 +802,13 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
       {/* ポイント追加 */}
       <section>
-        <div className="text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide">▼ ポイント</div>
+        <button
+          className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
+          onClick={() => setShowPointList(v => !v)}
+        >
+          <span>{showPointList ? '▼' : '▶'}</span>
+          <span>ポイント</span>
+        </button>
         <div className="flex gap-1 mb-2">
           <button
             onClick={() => setActiveTool(activeTool === 'add_point' ? 'none' : 'add_point')}
@@ -794,7 +822,7 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
           >＋ ポイント追加（ジオグラフィカ）</button>
         </div>
 
-        {points.map(pt => (
+        {showPointList && points.map(pt => (
           <div key={pt.id}
             className="flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
             onClick={() => panTo({ lat: pt.lat, lng: pt.lng })}
