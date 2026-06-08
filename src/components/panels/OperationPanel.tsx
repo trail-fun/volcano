@@ -151,7 +151,8 @@ export default function OperationPanel() {
   }
 
   const [showSectionList, setShowSectionList] = useState(false)
-  const [showPointList, setShowPointList] = useState(false)
+  const [showLocationList, setShowLocationList] = useState(false)
+  const [showMarkerList, setShowMarkerList] = useState(false)
   const [expandedSectionCPs, setExpandedSectionCPs] = useState<Set<number>>(new Set())
   const [expandedCPSegs, setExpandedCPSegs] = useState<Set<string>>(new Set())
 
@@ -476,35 +477,50 @@ ${startInfo}
         </section>
       )}
 
-      {/* ポイント */}
+      {/* コース地点 */}
       <section>
         <button
           className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
-          onClick={() => setShowPointList(v => !v)}
+          onClick={() => setShowLocationList(v => !v)}
         >
-          <span>{showPointList ? '▼' : '▶'}</span>
-          <span>ポイント</span>
+          <span>{showLocationList ? '▼' : '▶'}</span>
+          <span>コース地点</span>
         </button>
-        {showPointList && (
-          points.length === 0
-            ? <p className="text-xs text-gray-400">ポイントが登録されていません</p>
-            : points.map(pt => (
-              <div
-                key={pt.id}
-                className="flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
-                onClick={() => panTo({ lat: pt.lat, lng: pt.lng })}
-                title="クリックで地図に表示"
-              >
-                {pt.type === 'location'
-                  ? <span className="text-base text-red-600">●</span>
-                  : <span className="text-base">{POINT_ICONS[pt.type]}</span>
-                }
+        {showLocationList && (() => {
+          const locs = points.filter(pt => pt.type === 'location')
+          return locs.length === 0
+            ? <p className="text-xs text-gray-400">地点がありません</p>
+            : locs.map(pt => (
+              <div key={pt.id} className="flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none" onClick={() => panTo({ lat: pt.lat, lng: pt.lng })} title="クリックで地図に表示">
+                <span className="text-base text-red-600">●</span>
                 <span className="flex-1 text-sm truncate text-gray-700">{pt.name}</span>
-                {pt.type === 'location' && pt.cp && <span className="text-xs text-red-600 font-bold">CP</span>}
-                {pt.type === 'location' && pt.section && <span className="text-xs text-orange-600 font-bold">S</span>}
+                {pt.cp && <span className="text-xs text-red-600 font-bold">CP</span>}
+                {pt.section && <span className="text-xs text-orange-600 font-bold">S</span>}
               </div>
             ))
-        )}
+        })()}
+      </section>
+
+      {/* マーカー */}
+      <section>
+        <button
+          className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
+          onClick={() => setShowMarkerList(v => !v)}
+        >
+          <span>{showMarkerList ? '▼' : '▶'}</span>
+          <span>マーカー</span>
+        </button>
+        {showMarkerList && (() => {
+          const markers = points.filter(pt => pt.type !== 'location')
+          return markers.length === 0
+            ? <p className="text-xs text-gray-400">マーカーがありません</p>
+            : markers.map(pt => (
+              <div key={pt.id} className="flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none" onClick={() => panTo({ lat: pt.lat, lng: pt.lng })} title="クリックで地図に表示">
+                <span className="text-base">{POINT_ICONS[pt.type]}</span>
+                <span className="flex-1 text-sm truncate text-gray-700">{pt.name}</span>
+              </div>
+            ))
+        })()}
       </section>
 
       {/* レースプラン確認ボタン */}

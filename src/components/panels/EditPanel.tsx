@@ -105,7 +105,8 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
   const [showSectionList, setShowSectionList] = useState(false)
   const [showCPList, setShowCPList] = useState(false)
   const [showSegList, setShowSegList] = useState(false)
-  const [showPointList, setShowPointList] = useState(false)
+  const [showLocationList, setShowLocationList] = useState(false)
+  const [showMarkerList, setShowMarkerList] = useState(false)
   const [cloudSaveMsg, setCloudSaveMsg] = useState<string | null>(null)
   const [overwriteTarget, setOverwriteTarget] = useState<{ id: string; name: string } | null>(null)
   const { saveProject, updateProject, fetchProjects, projects, saving } = useProjectStore()
@@ -801,46 +802,68 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
 
       <hr className="border-gray-200" />
 
-      {/* ポイント追加 */}
+      {/* ポイント追加ボタン */}
+      <div className="flex gap-1">
+        <button
+          onClick={() => setActiveTool(activeTool === 'add_point' ? 'none' : 'add_point')}
+          className={`text-xs px-2 py-1.5 rounded font-semibold transition flex-1 ${activeTool === 'add_point' ? 'bg-green-600 text-white' : 'bg-green-100 hover:bg-green-200 text-green-700'}`}
+        >
+          {activeTool === 'add_point' ? '📍 追加中…' : '＋ ポイント追加（地図上）'}
+        </button>
+        <button
+          onClick={() => { setShowGeoDialog(true); setGeoText('') }}
+          className="text-xs px-2 py-1.5 rounded font-semibold transition bg-teal-100 hover:bg-teal-200 text-teal-700 whitespace-nowrap"
+        >＋ ポイント追加（ジオグラフィカ）</button>
+      </div>
+
+      {/* コース地点 */}
       <section>
         <button
           className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
-          onClick={() => setShowPointList(v => !v)}
+          onClick={() => setShowLocationList(v => !v)}
         >
-          <span>{showPointList ? '▼' : '▶'}</span>
-          <span>ポイント</span>
+          <span>{showLocationList ? '▼' : '▶'}</span>
+          <span>コース地点</span>
         </button>
-        <div className="flex gap-1 mb-2">
-          <button
-            onClick={() => setActiveTool(activeTool === 'add_point' ? 'none' : 'add_point')}
-            className={`text-xs px-2 py-1.5 rounded font-semibold transition flex-1 ${activeTool === 'add_point' ? 'bg-green-600 text-white' : 'bg-green-100 hover:bg-green-200 text-green-700'}`}
-          >
-            {activeTool === 'add_point' ? '📍 追加中…' : '＋ ポイント追加（地図上）'}
-          </button>
-          <button
-            onClick={() => { setShowGeoDialog(true); setGeoText('') }}
-            className="text-xs px-2 py-1.5 rounded font-semibold transition bg-teal-100 hover:bg-teal-200 text-teal-700 whitespace-nowrap"
-          >＋ ポイント追加（ジオグラフィカ）</button>
-        </div>
+        {showLocationList && (() => {
+          const locs = points.filter(pt => pt.type === 'location')
+          return locs.length === 0
+            ? <p className="text-xs text-gray-400">地点がありません</p>
+            : locs.map(pt => (
+              <div key={pt.id} className="flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none" onClick={() => panTo({ lat: pt.lat, lng: pt.lng })} onDoubleClick={() => setEditPointId(pt.id)} title="クリック：地図に表示　ダブルクリック：編集">
+                <span className="text-base text-red-600">●</span>
+                <span className={`flex-1 text-sm truncate ${!pt.enabled ? 'opacity-40 line-through' : ''}`}>{pt.name}</span>
+                {pt.cp && <span className="text-xs text-red-600 font-bold">CP</span>}
+                {pt.section && <span className="text-xs text-orange-600 font-bold">S</span>}
+                <button onClick={e => { e.stopPropagation(); setEditPointId(pt.id) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
+                <button onClick={e => { e.stopPropagation(); handleDeletePoint(pt.id) }} className="text-xs text-gray-400 hover:text-red-500">🗑</button>
+              </div>
+            ))
+        })()}
+      </section>
 
-        {showPointList && points.map(pt => (
-          <div key={pt.id}
-            className="flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none"
-            onClick={() => panTo({ lat: pt.lat, lng: pt.lng })}
-            onDoubleClick={() => setEditPointId(pt.id)}
-            title="クリック：地図に表示　ダブルクリック：編集"
-          >
-            {pt.type === 'location'
-              ? <span className="text-base text-red-600">●</span>
-              : <span className="text-base">{POINT_ICONS[pt.type]}</span>
-            }
-            <span className={`flex-1 text-sm truncate ${!pt.enabled ? 'opacity-40 line-through' : ''}`}>{pt.name}</span>
-            {pt.type === 'location' && pt.cp && <span className="text-xs text-red-600 font-bold">CP</span>}
-            {pt.type === 'location' && pt.section && <span className="text-xs text-orange-600 font-bold">S</span>}
-            <button onClick={e => { e.stopPropagation(); setEditPointId(pt.id) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
-            <button onClick={e => { e.stopPropagation(); handleDeletePoint(pt.id) }} className="text-xs text-gray-400 hover:text-red-500">🗑</button>
-          </div>
-        ))}
+      {/* マーカー */}
+      <section>
+        <button
+          className="flex items-center gap-1 text-xs font-bold text-gray-700 mb-1 uppercase tracking-wide w-full text-left hover:text-blue-600 transition select-none"
+          onClick={() => setShowMarkerList(v => !v)}
+        >
+          <span>{showMarkerList ? '▼' : '▶'}</span>
+          <span>マーカー</span>
+        </button>
+        {showMarkerList && (() => {
+          const markers = points.filter(pt => pt.type !== 'location')
+          return markers.length === 0
+            ? <p className="text-xs text-gray-400">マーカーがありません</p>
+            : markers.map(pt => (
+              <div key={pt.id} className="flex items-center gap-1 py-0.5 cursor-pointer hover:bg-gray-50 rounded transition -mx-1 px-1 select-none" onClick={() => panTo({ lat: pt.lat, lng: pt.lng })} onDoubleClick={() => setEditPointId(pt.id)} title="クリック：地図に表示　ダブルクリック：編集">
+                <span className="text-base">{POINT_ICONS[pt.type]}</span>
+                <span className={`flex-1 text-sm truncate ${!pt.enabled ? 'opacity-40 line-through' : ''}`}>{pt.name}</span>
+                <button onClick={e => { e.stopPropagation(); setEditPointId(pt.id) }} className="text-xs text-gray-400 hover:text-blue-500">編集</button>
+                <button onClick={e => { e.stopPropagation(); handleDeletePoint(pt.id) }} className="text-xs text-gray-400 hover:text-red-500">🗑</button>
+              </div>
+            ))
+        })()}
       </section>
 
       <hr className="border-gray-200" />
