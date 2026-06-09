@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRaceStore } from '../../store/raceStore'
@@ -50,6 +50,13 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
   const snapPreviewRef = useRef<L.CircleMarker | L.Marker | null>(null)
   const routesRef = useRef(routes)
   useEffect(() => { routesRef.current = routes }, [routes])
+
+  const [photoOverlay, setPhotoOverlay] = useState<string | null>(null)
+
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__showPhoto = (src: string) => setPhotoOverlay(src)
+    return () => { delete (window as unknown as Record<string, unknown>).__showPhoto }
+  }, [])
 
   useEffect(() => {
     const map = mapRef.current
@@ -147,11 +154,17 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     for (const pt of points) {
       if (isInHiddenRange(pt.lat, pt.lng)) continue
       const opacity = !pt.enabled ? 0.35 : dimmed ? 0.3 : 1
-      const popupContent = `<b>${pt.name}</b>${
-        pt.type === 'location' && (pt.cp || pt.section)
-          ? ` <span style="color:#dc2626;font-size:10px">${[pt.cp ? 'CP' : '', pt.section ? 'S' : ''].filter(Boolean).join(' ')}</span>`
-          : ''
-      }${pt.note ? `<br><span style="font-size:11px;color:#555">${pt.note}</span>` : ''}`
+      const badges = pt.type === 'location' && (pt.cp || pt.section)
+        ? ` <span style="color:#dc2626;font-size:10px">${[pt.cp ? 'CP' : '', pt.section ? 'S' : ''].filter(Boolean).join(' ')}</span>`
+        : ''
+      const thumbs = (pt.photos ?? []).length > 0
+        ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${
+            pt.photos.map(src =>
+              `<img src="${src}" style="width:64px;height:64px;object-fit:cover;cursor:pointer;border-radius:4px;border:1px solid #e5e7eb" onclick="window.__showPhoto('${src}')">`
+            ).join('')
+          }</div>`
+        : ''
+      const popupContent = `<b>${pt.name}</b>${badges}${pt.note ? `<br><span style="font-size:11px;color:#555">${pt.note}</span>` : ''}${thumbs}`
       if (pt.type === 'location') {
         const radius = pt.cp ? 6 : 4
         const m = L.circleMarker([pt.lat, pt.lng], {
@@ -331,5 +344,25 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     })
   }, [drawingPoints, drawingRouteType])
 
-  return <div ref={containerRef} style={{ position: 'absolute', inset: 0, zIndex: 0 }} />
+  return (
+    <>
+      <div ref={containerRef} style={{ position: 'absolute', inset: 0, zIndex: 0 }} />
+      {photoOverlay && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] cursor-pointer"
+          onClick={() => setPhotoOverlay(null)}
+        >
+          <img
+            src={photoOverlay}
+            style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: '8px', objectFit: 'contain' }}
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setPhotoOverlay(null)}
+            className="absolute top-4 right-4 text-white text-3xl leading-none hover:text-gray-300"
+          >×</button>
+        </div>
+      )}
+    </>
+  )
 }
