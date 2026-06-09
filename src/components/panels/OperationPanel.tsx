@@ -519,7 +519,7 @@ export default function OperationPanel() {
         })
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-2">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl flex flex-col gap-4 p-6 max-h-[95vh] overflow-y-auto">
+            <div className="bg-white rounded-xl shadow-2xl w-[95vw] flex flex-col gap-4 p-6 max-h-[95vh] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <div className="font-bold text-gray-800">📋 レースプラン</div>
                 <button onClick={() => setShowRacePlan(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
