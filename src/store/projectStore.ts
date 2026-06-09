@@ -5,6 +5,11 @@ export type ProjectMeta = {
   id: string
   name: string
   updated_at: string
+  is_owner: boolean
+}
+
+export type ProjectShare = {
+  email: string
 }
 
 type ProjectStore = {
@@ -15,6 +20,9 @@ type ProjectStore = {
   updateProject: (id: string, name: string, data: object) => Promise<string | null>
   loadProject: (id: string) => Promise<object | null>
   deleteProject: (id: string) => Promise<void>
+  getShares: (projectId: string) => Promise<ProjectShare[]>
+  addShare: (projectId: string, email: string) => Promise<string | null>
+  removeShare: (projectId: string, email: string) => Promise<void>
 }
 
 export const useProjectStore = create<ProjectStore>((set) => ({
@@ -22,11 +30,18 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   saving: false,
 
   fetchProjects: async () => {
+    const { data: { user } } = await supabase.auth.getUser()
     const { data } = await supabase
       .from('projects')
-      .select('id, name, updated_at')
+      .select('id, name, updated_at, user_id')
       .order('updated_at', { ascending: false })
-    set({ projects: data ?? [] })
+    const projects: ProjectMeta[] = (data ?? []).map(p => ({
+      id: p.id,
+      name: p.name,
+      updated_at: p.updated_at,
+      is_owner: p.user_id === user?.id,
+    }))
+    set({ projects })
   },
 
   saveProject: async (name, data) => {
@@ -61,5 +76,29 @@ export const useProjectStore = create<ProjectStore>((set) => ({
 
   deleteProject: async (id) => {
     await supabase.from('projects').delete().eq('id', id)
+  },
+
+  getShares: async (projectId) => {
+    const { data } = await supabase
+      .from('project_shares')
+      .select('shared_with_email')
+      .eq('project_id', projectId)
+      .order('created_at')
+    return (data ?? []).map(r => ({ email: r.shared_with_email }))
+  },
+
+  addShare: async (projectId, email) => {
+    const { error } = await supabase.from('project_shares').insert({
+      project_id: projectId,
+      shared_with_email: email.trim().toLowerCase(),
+    })
+    return error ? error.message : null
+  },
+
+  removeShare: async (projectId, email) => {
+    await supabase.from('project_shares')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('shared_with_email', email)
   },
 }))
