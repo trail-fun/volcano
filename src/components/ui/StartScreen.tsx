@@ -18,6 +18,7 @@ export default function StartScreen() {
   const [showProjects, setShowProjects] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [showAdmin, setShowAdmin] = useState(false)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const isAdmin = user?.email === ADMIN_EMAIL
 
   // 共有ダイアログ
@@ -159,9 +160,9 @@ export default function StartScreen() {
                   )}
                   {p.is_owner && (
                     <button
-                      onClick={() => handleDelete(p.id)}
+                      onClick={() => setDeleteConfirmId(p.id)}
                       disabled={deleting === p.id}
-                      className="text-xs text-gray-300 hover:text-red-400 transition flex-shrink-0"
+                      className="text-xs text-gray-300 hover:text-red-400 transition flex-shrink-0 ml-3"
                     >🗑</button>
                   )}
                 </div>
@@ -180,6 +181,32 @@ export default function StartScreen() {
           </div>
         </div>
       </div>
+
+      {/* 削除確認ダイアログ */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs flex flex-col gap-4 p-6">
+            <div className="font-bold text-gray-800">削除の確認</div>
+            <p className="text-sm text-gray-600">
+              「{projects.find(p => p.id === deleteConfirmId)?.name || '無題'}」を削除しますか？この操作は元に戻せません。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteConfirmId(null)}
+                className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50"
+              >キャンセル</button>
+              <button
+                onClick={async () => {
+                  const id = deleteConfirmId
+                  setDeleteConfirmId(null)
+                  await handleDelete(id)
+                }}
+                className="text-sm px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded transition"
+              >削除</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 共有ダイアログ */}
       {shareTarget && (
