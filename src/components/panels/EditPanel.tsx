@@ -333,12 +333,25 @@ export default function EditPanel({ pendingLatLng, clearPending }: Props) {
     }
   }
 
+  const compressImage = (file: File, maxSize = 1024, quality = 0.75): Promise<string> =>
+    new Promise(res => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
+        const w = Math.round(img.width * scale)
+        const h = Math.round(img.height * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+        res(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.src = url
+    })
+
   const readPhotos = (files: FileList): Promise<string[]> =>
-    Promise.all(Array.from(files).map(f => new Promise<string>(res => {
-      const reader = new FileReader()
-      reader.onload = e => res(e.target?.result as string)
-      reader.readAsDataURL(f)
-    })))
+    Promise.all(Array.from(files).map(f => compressImage(f)))
 
   const handleNewPointPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !newPoint) return
