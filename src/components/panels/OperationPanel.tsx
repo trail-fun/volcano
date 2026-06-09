@@ -199,7 +199,7 @@ export default function OperationPanel() {
       : ''
     const trs = rows.map(r => {
       const ctLabel = r.courseTime
-        ? ` <span style="color:#7c3aed;font-size:11px">（CT${r.courseTime}）</span>`
+        ? ` <span style="color:#7c3aed;font-size:11px">（CT ${r.courseTime}）</span>`
         : ''
       const multLabel = r.mult !== 1.0
         ? ` <span style="color:#d97706">×${r.mult}</span>`
