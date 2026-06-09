@@ -150,8 +150,9 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
           : ''
       }${pt.note ? `<br><span style="font-size:11px;color:#555">${pt.note}</span>` : ''}`
       if (pt.type === 'location') {
+        const radius = pt.cp ? 6 : 4
         const m = L.circleMarker([pt.lat, pt.lng], {
-          radius: 7, color: '#dc2626', fillColor: 'white', fillOpacity: 1, weight: 2.5, opacity,
+          radius, color: '#dc2626', fillColor: 'white', fillOpacity: 1, weight: 2, opacity,
         }).addTo(map)
         m.bindPopup(popupContent)
         m.on('click', e => { e.originalEvent.stopPropagation(); m.openPopup() })
