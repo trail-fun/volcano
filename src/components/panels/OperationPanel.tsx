@@ -518,8 +518,8 @@ export default function OperationPanel() {
           return { key, ci, intervalTime: minsToTime(Math.round(intervalMins)), passageTime, cumTime: minsToTime(Math.round(cumMins)), cumDistKm }
         })
         return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-2">
-            <div className="bg-white rounded-xl shadow-2xl w-[95vw] flex flex-col gap-4 p-6 max-h-[95vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-white z-[60] flex flex-col">
+            <div className="flex flex-col gap-3 p-4 flex-1 overflow-y-auto">
               <div className="flex items-center justify-between">
                 <div className="font-bold text-gray-800">📋 レースプラン</div>
                 <button onClick={() => setShowRacePlan(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
@@ -576,7 +576,7 @@ export default function OperationPanel() {
                   </tbody>
                 </table>
               </div>
-              <div className="flex justify-end gap-2 pt-1">
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 mt-2 flex-shrink-0">
                 <button onClick={() => setShowRacePlan(false)} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
                 <button onClick={saveRacePlan} className="text-sm px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-semibold transition">保存</button>
               </div>
