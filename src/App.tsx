@@ -4,6 +4,7 @@ import { useModeStore } from './store/modeStore'
 import { useAuthStore } from './store/authStore'
 import StartScreen from './components/ui/StartScreen'
 import LoginScreen from './components/ui/LoginScreen'
+import PasswordResetScreen from './components/ui/PasswordResetScreen'
 import ModeToggle from './components/ui/ModeToggle'
 import MapView from './components/map/MapView'
 import EditPanel from './components/panels/EditPanel'
@@ -13,7 +14,7 @@ import './index.css'
 export default function App() {
   const { race } = useRaceStore()
   const { mode } = useModeStore()
-  const { user, loading, init } = useAuthStore()
+  const { user, loading, isRecovery, init } = useAuthStore()
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -28,6 +29,7 @@ export default function App() {
       <span className="text-white text-2xl">🌋</span>
     </div>
   )
+  if (isRecovery) return <PasswordResetScreen />
   if (!user) return <LoginScreen />
   if (!race) return <StartScreen />
 

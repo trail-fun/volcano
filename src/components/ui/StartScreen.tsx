@@ -12,14 +12,34 @@ export default function StartScreen() {
   const gpxRef = useRef<HTMLInputElement>(null)
   const zipRef = useRef<HTMLInputElement>(null)
   const { loadFromGpx, loadFromZip, race, routes, points } = useRaceStore()
-  const { user, signOut } = useAuthStore()
+  const { user, signOut, updatePassword } = useAuthStore()
   const { setMode, setViewerOnly } = useModeStore()
   const { projects, fetchProjects, loadProject, deleteProject, getShares, addShare, removeShare } = useProjectStore()
   const [showProjects, setShowProjects] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [showAdmin, setShowAdmin] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [showChangePassword, setShowChangePassword] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [pwError, setPwError] = useState<string | null>(null)
+  const [pwMsg, setPwMsg] = useState<string | null>(null)
+  const [pwLoading, setPwLoading] = useState(false)
   const isAdmin = user?.email === ADMIN_EMAIL
+
+  const handleChangePassword = async () => {
+    setPwError(null)
+    if (!newPassword) { setPwError('パスワードを入力してください'); return }
+    if (newPassword.length < 6) { setPwError('パスワードは6文字以上で入力してください'); return }
+    if (newPassword !== confirmPassword) { setPwError('パスワードが一致しません'); return }
+    setPwLoading(true)
+    const err = await updatePassword(newPassword)
+    setPwLoading(false)
+    if (err) { setPwError(err); return }
+    setPwMsg('パスワードを変更しました')
+    setNewPassword(''); setConfirmPassword('')
+    setTimeout(() => { setPwMsg(null); setShowChangePassword(false) }, 2000)
+  }
 
   // 共有ダイアログ
   const [shareTarget, setShareTarget] = useState<ProjectMeta | null>(null)
@@ -171,9 +191,10 @@ export default function StartScreen() {
           </div>
         )}
 
-        <div className="flex items-center justify-between w-full text-xs text-gray-400">
+        <div className="flex flex-col gap-1 w-full text-xs text-gray-400">
           <span className="truncate">{user?.email}</span>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => { setShowChangePassword(true); setNewPassword(''); setConfirmPassword(''); setPwError(null); setPwMsg(null) }} className="hover:text-gray-600 underline">パスワード変更</button>
             {isAdmin && (
               <button onClick={() => setShowAdmin(true)} className="hover:text-indigo-600">👤 ユーザー管理</button>
             )}
@@ -181,6 +202,45 @@ export default function StartScreen() {
           </div>
         </div>
       </div>
+
+      {/* パスワード変更ダイアログ */}
+      {showChangePassword && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs flex flex-col gap-4 p-6">
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-gray-800 text-sm">パスワード変更</div>
+              <button onClick={() => setShowChangePassword(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <div className="flex flex-col gap-2">
+              <input
+                type="password"
+                placeholder="新しいパスワード（6文字以上）"
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+              />
+              <input
+                type="password"
+                placeholder="新しいパスワード（確認）"
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleChangePassword()}
+              />
+              {pwError && <p className="text-xs text-red-500">{pwError}</p>}
+              {pwMsg && <p className="text-xs text-green-600">{pwMsg}</p>}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowChangePassword(false)} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+              <button
+                onClick={handleChangePassword}
+                disabled={pwLoading}
+                className="text-sm px-4 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white rounded transition"
+              >{pwLoading ? '変更中…' : '変更'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 削除確認ダイアログ */}
       {deleteConfirmId && (
