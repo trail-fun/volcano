@@ -66,6 +66,9 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
     if (mapRef.current || !containerRef.current) return
     const map = L.map(containerRef.current, { zoomControl: true }).setView([35.7, 137.5], 10)
     L.tileLayer(GSI_URL, { attribution: '©国土地理院', maxZoom: 18 }).addTo(map)
+    // ポイントマーカーをルート線（overlayPane z:400）の上に表示するカスタムペイン
+    const pane = map.createPane('pointsPane')
+    pane.style.zIndex = '450'
     mapRef.current = map
     return () => { map.remove(); mapRef.current = null }
   }, [])
@@ -153,6 +156,7 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
         const radius = pt.cp ? 6 : 4
         const m = L.circleMarker([pt.lat, pt.lng], {
           radius, color: '#dc2626', fillColor: 'white', fillOpacity: 1, weight: 2, opacity,
+          pane: 'pointsPane',
         }).addTo(map)
         m.bindPopup(popupContent)
         m.on('click', e => { e.originalEvent.stopPropagation(); m.openPopup() })
@@ -162,7 +166,7 @@ export default function MapView({ onMapClick }: { onMapClick?: (lat: number, lng
           html: `<div style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));opacity:${opacity}">${POINT_ICONS[pt.type]}</div>`,
           iconSize: [28, 28], iconAnchor: [14, 14], className: '',
         })
-        const marker = L.marker([pt.lat, pt.lng], { icon }).addTo(map)
+        const marker = L.marker([pt.lat, pt.lng], { icon, pane: 'pointsPane' }).addTo(map)
         marker.bindPopup(popupContent)
         marker.on('click', e => { e.originalEvent.stopPropagation(); marker.openPopup() })
         layersRef.current.push(marker)
