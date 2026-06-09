@@ -90,7 +90,7 @@ function formatDateTime(base: Date, addMins: number): string {
 }
 
 export default function OperationPanel() {
-  const { race, routes, points } = useRaceStore()
+  const { race, routes, points, setRace } = useRaceStore()
   const { position, candidates, setPosition, selectCandidate, clearCasualty } = useCasualtyStore()
   const { fitBounds, panTo, setHiddenCourseRanges } = useMapStore()
   const [latStr, setLatStr] = useState('')
@@ -163,84 +163,43 @@ export default function OperationPanel() {
     const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next
   })
 
+  const [showRacePlan, setShowRacePlan] = useState(false)
+  // key → 倍率(文字列)・休憩時間(文字列) の編集用ドラフト
+  const [draftMults, setDraftMults] = useState<Record<string, string>>({})
+  const [draftBreaks, setDraftBreaks] = useState<Record<string, string>>({})
+
   const openRacePlan = () => {
-    const startDate = parseStartDateTime(race?.startTime || '')
-    let cumDistKm = 0
-    let cumMins = 0
-    const rows = cpSection.map(ci => {
+    const initMults: Record<string, string> = {}
+    const initBreaks: Record<string, string> = {}
+    cpSection.forEach(ci => {
       const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
-      const mult = race?.cpMultipliers?.[key] ?? 1.0
-      const ctMins = timeToMins(ci.courseTime)
-      const intervalMins = ctMins * mult
-      const breakMins = mainRoute
-        ? mainRoute.segments
-            .filter(s => s.startIndex >= ci.fromCoordIdx && s.endIndex <= ci.toCoordIdx)
-            .reduce((sum, s) => sum + timeToMins(s.breakTime || ''), 0)
-        : 0
-      cumDistKm += ci.distKm
-      cumMins += intervalMins + breakMins
-      const passageTime = startDate
-        ? formatDateTime(startDate, Math.round(cumMins))
-        : minsToTime(Math.round(cumMins))
-      return {
-        name: `${ci.fromName} → ${ci.toName}`,
-        courseTime: ci.courseTime,
-        distKm: cumDistKm.toFixed(2),
-        intervalTime: minsToTime(Math.round(intervalMins)),
-        breakTime: breakMins > 0 ? minsToTime(Math.round(breakMins)) : '',
-        passageTime,
-        cumTime: minsToTime(Math.round(cumMins)),
-        mult,
-      }
+      initMults[key] = String(race?.cpMultipliers?.[key] ?? 1.0)
+      initBreaks[key] = race?.cpBreakTimes?.[key] ?? (() => {
+        if (!mainRoute) return ''
+        const mins = mainRoute.segments
+          .filter(s => s.startIndex >= ci.fromCoordIdx && s.endIndex <= ci.toCoordIdx)
+          .reduce((sum, s) => sum + timeToMins(s.breakTime || ''), 0)
+        return mins > 0 ? minsToTime(mins) : ''
+      })()
     })
+    setDraftMults(initMults)
+    setDraftBreaks(initBreaks)
+    setShowRacePlan(true)
+  }
 
-    const startInfo = race?.startTime
-      ? `<p style="font-size:12px;color:#666;margin:0 0 12px">スタート時刻: <strong>${race.startTime}</strong></p>`
-      : ''
-    const trs = rows.map(r => {
-      const ctLabel = r.courseTime
-        ? ` <span style="color:#7c3aed;font-size:11px">（CT ${r.courseTime}）</span>`
-        : ''
-      const multLabel = r.mult !== 1.0
-        ? ` <span style="color:#d97706">×${r.mult}</span>`
-        : ''
-      return `<tr>
-        <td>${r.name}${ctLabel}${multLabel}</td>
-        <td class="num">${r.distKm} km</td>
-        <td class="num" style="color:#7c3aed">${r.intervalTime}</td>
-        <td class="num" style="color:#ea580c">${r.breakTime || '—'}</td>
-        <td class="num" style="font-weight:600">${r.passageTime}</td>
-        <td class="num" style="color:#555">${r.cumTime}</td>
-      </tr>`
-    }).join('')
-
-    const html = `<!DOCTYPE html><html lang="ja"><head>
-<meta charset="utf-8"><title>レースプラン</title>
-<style>
-  body{font-family:sans-serif;padding:20px;font-size:13px;background:#fff}
-  h2{margin:0 0 8px;font-size:16px}
-  table{border-collapse:collapse;width:100%}
-  th,td{padding:6px 10px;border-bottom:1px solid #e5e7eb;white-space:nowrap}
-  th{background:#f9fafb;font-weight:600;color:#374151;text-align:right}
-  th:first-child{text-align:left}
-  td:first-child{text-align:left;color:#374151}
-  .num{text-align:right;font-family:monospace}
-  tr:hover td{background:#f9fafb}
-</style>
-</head><body>
-<h2>📋 レースプラン</h2>
-${startInfo}
-<table>
-<thead><tr>
-  <th style="text-align:left">CT区間</th>
-  <th>累積距離</th><th>区間時間</th><th>休憩時間</th><th>通過時刻</th><th>累積時間</th>
-</tr></thead>
-<tbody>${trs}</tbody>
-</table>
-</body></html>`
-
-    const w = window.open('', '_blank', 'width=700,height=500')
-    if (w) { w.document.write(html); w.document.close() }
+  const saveRacePlan = () => {
+    if (!race) return
+    const newMults: Record<string, number> = {}
+    const newBreaks: Record<string, string> = {}
+    Object.entries(draftMults).forEach(([k, v]) => {
+      const n = parseFloat(v)
+      if (!isNaN(n) && n > 0) newMults[k] = n
+    })
+    Object.entries(draftBreaks).forEach(([k, v]) => {
+      if (v.trim()) newBreaks[k] = v.trim()
+    })
+    setRace({ ...race, cpMultipliers: newMults, cpBreakTimes: newBreaks })
+    setShowRacePlan(false)
   }
 
   // hiddenSections が変わったら mapStore を更新（確認モード起動時は空 Set なのでリセット相当）
@@ -539,6 +498,92 @@ ${startInfo}
           📋 レースプラン確認
         </button>
       )}
+
+      {/* レースプランモーダル */}
+      {showRacePlan && (() => {
+        const startDate = parseStartDateTime(race?.startTime || '')
+        let cumDistKm = 0
+        let cumMins = 0
+        const rows = cpSection.map(ci => {
+          const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
+          const mult = parseFloat(draftMults[key] ?? '1') || 1
+          const ctMins = timeToMins(ci.courseTime)
+          const intervalMins = ctMins * mult
+          const breakMins = timeToMins(draftBreaks[key] ?? '')
+          cumDistKm += ci.distKm
+          cumMins += intervalMins + breakMins
+          const passageTime = startDate
+            ? formatDateTime(startDate, Math.round(cumMins))
+            : minsToTime(Math.round(cumMins))
+          return { key, ci, intervalTime: minsToTime(Math.round(intervalMins)), passageTime, cumTime: minsToTime(Math.round(cumMins)), cumDistKm }
+        })
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-2">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col gap-3 p-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-gray-800">📋 レースプラン</div>
+                <button onClick={() => setShowRacePlan(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
+              </div>
+              {race?.startTime && (
+                <div className="text-xs text-gray-500">スタート時刻: <span className="font-mono font-semibold">{race.startTime}</span></div>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left py-1.5 px-2 font-semibold text-gray-600">CT区間</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積距離</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">倍率</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">区間時間</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">休憩時間</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">通過時刻</th>
+                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積時間</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.key} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="py-1.5 px-2 text-gray-700">
+                          {r.ci.fromName} → {r.ci.toName}
+                          {r.ci.courseTime && <span className="ml-1 text-purple-600">（CT {r.ci.courseTime}）</span>}
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.cumDistKm.toFixed(2)} km</td>
+                        <td className="py-1.5 px-2 text-right">
+                          <input
+                            type="number"
+                            step="0.05"
+                            min="0.1"
+                            max="9.9"
+                            value={draftMults[r.key] ?? '1'}
+                            onChange={e => setDraftMults(p => ({ ...p, [r.key]: e.target.value }))}
+                            className="w-14 text-right border rounded px-1 py-0.5 font-mono text-amber-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                          />
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-mono text-purple-700">{r.intervalTime}</td>
+                        <td className="py-1.5 px-2 text-right">
+                          <input
+                            type="text"
+                            placeholder="0:00"
+                            value={draftBreaks[r.key] ?? ''}
+                            onChange={e => setDraftBreaks(p => ({ ...p, [r.key]: e.target.value }))}
+                            className="w-14 text-right border rounded px-1 py-0.5 font-mono text-orange-600 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                          />
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-mono font-semibold text-gray-800">{r.passageTime}</td>
+                        <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.cumTime}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setShowRacePlan(false)} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+                <button onClick={saveRacePlan} className="text-sm px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-semibold transition">保存</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
     </div>
   )
