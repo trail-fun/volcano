@@ -184,6 +184,7 @@ export default function OperationPanel() {
         : minsToTime(Math.round(cumMins))
       return {
         name: `${ci.fromName} → ${ci.toName}`,
+        courseTime: ci.courseTime,
         distKm: cumDistKm.toFixed(2),
         intervalTime: minsToTime(Math.round(intervalMins)),
         breakTime: breakMins > 0 ? minsToTime(Math.round(breakMins)) : '',
@@ -196,16 +197,22 @@ export default function OperationPanel() {
     const startInfo = race?.startTime
       ? `<p style="font-size:12px;color:#666;margin:0 0 12px">スタート時刻: <strong>${race.startTime}</strong></p>`
       : ''
-    const trs = rows.map(r =>
-      `<tr>
-        <td>${r.name}${r.mult !== 1.0 ? ` <span style="color:#d97706">×${r.mult}</span>` : ''}</td>
+    const trs = rows.map(r => {
+      const ctLabel = r.courseTime
+        ? ` <span style="color:#7c3aed;font-size:11px">（CT${r.courseTime}）</span>`
+        : ''
+      const multLabel = r.mult !== 1.0
+        ? ` <span style="color:#d97706">×${r.mult}</span>`
+        : ''
+      return `<tr>
+        <td>${r.name}${ctLabel}${multLabel}</td>
         <td class="num">${r.distKm} km</td>
         <td class="num" style="color:#7c3aed">${r.intervalTime}</td>
         <td class="num" style="color:#ea580c">${r.breakTime || '—'}</td>
         <td class="num" style="font-weight:600">${r.passageTime}</td>
         <td class="num" style="color:#555">${r.cumTime}</td>
       </tr>`
-    ).join('')
+    }).join('')
 
     const html = `<!DOCTYPE html><html lang="ja"><head>
 <meta charset="utf-8"><title>レースプラン</title>
