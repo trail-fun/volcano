@@ -519,7 +519,7 @@ export default function OperationPanel() {
         })
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-2">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col gap-3 p-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl flex flex-col gap-4 p-6 max-h-[95vh] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <div className="font-bold text-gray-800">📋 レースプラン</div>
                 <button onClick={() => setShowRacePlan(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
@@ -528,27 +528,27 @@ export default function OperationPanel() {
                 <div className="text-xs text-gray-500">スタート時刻: <span className="font-mono font-semibold">{race.startTime}</span></div>
               )}
               <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
+                <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left py-1.5 px-2 font-semibold text-gray-600">CT区間</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積距離</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">倍率</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">区間時間</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">休憩時間</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">通過時刻</th>
-                      <th className="text-right py-1.5 px-2 font-semibold text-gray-600 whitespace-nowrap">累積時間</th>
+                      <th className="text-left py-2 px-3 font-semibold text-gray-600">CT区間</th>
+                      <th className="text-right py-2 px-3 font-semibold text-gray-600 whitespace-nowrap">累積距離</th>
+                      <th className="text-right py-2 px-3 font-semibold text-gray-600 whitespace-nowrap">倍率</th>
+                      <th className="text-right py-2 px-3 font-semibold text-gray-600 whitespace-nowrap">区間時間</th>
+                      <th className="text-right py-2 px-3 font-semibold text-gray-600 whitespace-nowrap">休憩時間</th>
+                      <th className="text-right py-2 px-3 font-semibold text-gray-600 whitespace-nowrap">通過時刻</th>
+                      <th className="text-right py-2 px-3 font-semibold text-gray-600 whitespace-nowrap">累積時間</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((r) => (
                       <tr key={r.key} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="py-1.5 px-2 text-gray-700">
+                        <td className="py-2 px-3 text-gray-700">
                           {r.ci.fromName} → {r.ci.toName}
                           {r.ci.courseTime && <span className="ml-1 text-purple-600">（CT {r.ci.courseTime}）</span>}
                         </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.cumDistKm.toFixed(2)} km</td>
-                        <td className="py-1.5 px-2 text-right">
+                        <td className="py-2 px-3 text-right font-mono text-gray-600">{r.cumDistKm.toFixed(2)} km</td>
+                        <td className="py-2 px-3 text-right">
                           <input
                             type="number"
                             step="0.05"
@@ -556,21 +556,21 @@ export default function OperationPanel() {
                             max="9.9"
                             value={draftMults[r.key] ?? '1'}
                             onChange={e => setDraftMults(p => ({ ...p, [r.key]: e.target.value }))}
-                            className="w-14 text-right border rounded px-1 py-0.5 font-mono text-amber-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                            className="w-16 text-right border rounded px-1.5 py-1 font-mono text-amber-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
                           />
                         </td>
-                        <td className="py-1.5 px-2 text-right font-mono text-purple-700">{r.intervalTime}</td>
-                        <td className="py-1.5 px-2 text-right">
+                        <td className="py-2 px-3 text-right font-mono text-purple-700">{r.intervalTime}</td>
+                        <td className="py-2 px-3 text-right">
                           <input
                             type="text"
                             placeholder="0:00"
                             value={draftBreaks[r.key] ?? ''}
                             onChange={e => setDraftBreaks(p => ({ ...p, [r.key]: e.target.value }))}
-                            className="w-14 text-right border rounded px-1 py-0.5 font-mono text-orange-600 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                            className="w-16 text-right border rounded px-1.5 py-1 font-mono text-orange-600 focus:outline-none focus:ring-1 focus:ring-indigo-300"
                           />
                         </td>
-                        <td className="py-1.5 px-2 text-right font-mono font-semibold text-gray-800">{r.passageTime}</td>
-                        <td className="py-1.5 px-2 text-right font-mono text-gray-600">{r.cumTime}</td>
+                        <td className="py-2 px-3 text-right font-mono font-semibold text-gray-800">{r.passageTime}</td>
+                        <td className="py-2 px-3 text-right font-mono text-gray-600">{r.cumTime}</td>
                       </tr>
                     ))}
                   </tbody>
