@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 type UserEntry = { id: string; email: string; created_at: string }
 
 const FUNCTIONS_URL = import.meta.env.VITE_SUPABASE_URL + '/functions/v1'
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string
 
 async function callAdmin(path: string, body?: object) {
   const { data: { session } } = await supabase.auth.getSession()
@@ -118,11 +119,13 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                     <div className="text-sm text-gray-800 truncate">{u.email}</div>
                     <div className="text-xs text-gray-400">{new Date(u.created_at).toLocaleDateString('ja-JP')}</div>
                   </div>
-                  <button
-                    onClick={() => deleteUser(u.id, u.email ?? '')}
-                    disabled={deleting === u.id}
-                    className="text-xs text-gray-300 hover:text-red-500 disabled:opacity-40 transition flex-shrink-0"
-                  >🗑</button>
+                  {u.email !== ADMIN_EMAIL && (
+                    <button
+                      onClick={() => deleteUser(u.id, u.email ?? '')}
+                      disabled={deleting === u.id}
+                      className="text-xs text-gray-300 hover:text-red-500 disabled:opacity-40 transition flex-shrink-0"
+                    >🗑</button>
+                  )}
                 </div>
               ))
           }
