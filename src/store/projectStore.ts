@@ -15,6 +15,8 @@ export type ProjectShare = {
 type ProjectStore = {
   projects: ProjectMeta[]
   saving: boolean
+  currentProjectId: string | null
+  setCurrentProjectId: (id: string | null) => void
   fetchProjects: () => Promise<void>
   saveProject: (name: string, data: object) => Promise<string | null>
   updateProject: (id: string, name: string, data: object) => Promise<string | null>
@@ -28,6 +30,8 @@ type ProjectStore = {
 export const useProjectStore = create<ProjectStore>((set) => ({
   projects: [],
   saving: false,
+  currentProjectId: null,
+  setCurrentProjectId: (id) => set({ currentProjectId: id }),
 
   fetchProjects: async () => {
     const { data: { user } } = await supabase.auth.getUser()

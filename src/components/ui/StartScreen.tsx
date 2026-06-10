@@ -14,7 +14,7 @@ export default function StartScreen() {
   const { loadFromGpx, loadFromZip, race, routes, points } = useRaceStore()
   const { user, signOut, updatePassword } = useAuthStore()
   const { setMode, setViewerOnly } = useModeStore()
-  const { projects, fetchProjects, loadProject, deleteProject, getShares, addShare, removeShare } = useProjectStore()
+  const { projects, fetchProjects, loadProject, deleteProject, getShares, addShare, removeShare, setCurrentProjectId } = useProjectStore()
   const [showProjects, setShowProjects] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [loadingProject, setLoadingProject] = useState<string | null>(null)
@@ -57,11 +57,11 @@ export default function StartScreen() {
 
   const handleGpx = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f) { setViewerOnly(false); await loadFromGpx(f); e.target.value = '' }
+    if (f) { setViewerOnly(false); setCurrentProjectId(null); await loadFromGpx(f); e.target.value = '' }
   }
   const handleZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f) { setViewerOnly(false); await loadFromZip(f); setMode('operation'); e.target.value = '' }
+    if (f) { setViewerOnly(false); setCurrentProjectId(null); await loadFromZip(f); setMode('operation'); e.target.value = '' }
   }
 
   const handleLoadProject = async (p: ProjectMeta) => {
@@ -76,6 +76,7 @@ export default function StartScreen() {
         routes: (d.routes as typeof routes) ?? [],
         points: (d.points as typeof points) ?? [],
       })
+      setCurrentProjectId(p.id)
       setViewerOnly(!p.is_owner)
       setMode('operation')
       setShowProjects(false)

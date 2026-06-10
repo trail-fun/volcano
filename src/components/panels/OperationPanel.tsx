@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRaceStore } from '../../store/raceStore'
+import { useProjectStore } from '../../store/projectStore'
 import { useCasualtyStore } from '../../store/casualtyStore'
 import { useMapStore } from '../../store/mapStore'
 import { calcWaterRoute } from '../../hooks/useRouteCalc'
@@ -91,6 +92,7 @@ function formatDateTime(base: Date, addMins: number): string {
 
 export default function OperationPanel() {
   const { race, routes, points, setRace } = useRaceStore()
+  const { currentProjectId, updateProject, saving: cloudSaving } = useProjectStore()
   const { position, candidates, setPosition, selectCandidate, clearCasualty } = useCasualtyStore()
   const { fitBounds, panTo, setHiddenCourseRanges } = useMapStore()
   const [latStr, setLatStr] = useState('')
@@ -164,6 +166,7 @@ export default function OperationPanel() {
   })
 
   const [showRacePlan, setShowRacePlan] = useState(false)
+  const [racePlanSaveMsg, setRacePlanSaveMsg] = useState<string | null>(null)
   // key → 倍率(文字列)・休憩時間(文字列) の編集用ドラフト
   const [draftMults, setDraftMults] = useState<Record<string, string>>({})
   const [draftBreaks, setDraftBreaks] = useState<Record<string, string>>({})
@@ -187,7 +190,7 @@ export default function OperationPanel() {
     setShowRacePlan(true)
   }
 
-  const saveRacePlan = () => {
+  const saveRacePlan = async () => {
     if (!race) return
     const newMults: Record<string, number> = {}
     const newBreaks: Record<string, string> = {}
@@ -198,8 +201,16 @@ export default function OperationPanel() {
     Object.entries(draftBreaks).forEach(([k, v]) => {
       if (v.trim()) newBreaks[k] = v.trim()
     })
-    setRace({ ...race, cpMultipliers: newMults, cpBreakTimes: newBreaks })
-    setShowRacePlan(false)
+    const updatedRace = { ...race, cpMultipliers: newMults, cpBreakTimes: newBreaks }
+    setRace(updatedRace)
+    if (currentProjectId) {
+      setRacePlanSaveMsg('保存中…')
+      const err = await updateProject(currentProjectId, updatedRace.name, { race: updatedRace, routes, points })
+      setRacePlanSaveMsg(err ? `エラー: ${err}` : '☁️ クラウドに保存しました')
+      setTimeout(() => { setRacePlanSaveMsg(null); setShowRacePlan(false) }, 1500)
+    } else {
+      setShowRacePlan(false)
+    }
   }
 
   const viewRacePlan = () => {
@@ -650,9 +661,12 @@ ${startInfo}
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2 flex-shrink-0 gap-2 flex-wrap">
                 <button onClick={viewRacePlan} className="text-sm px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded font-semibold transition">📋 レースプラン確認</button>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  {racePlanSaveMsg && <span className="text-xs text-green-600">{racePlanSaveMsg}</span>}
                   <button onClick={() => setShowRacePlan(false)} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
-                  <button onClick={saveRacePlan} className="text-sm px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-semibold transition">保存</button>
+                  <button onClick={saveRacePlan} disabled={cloudSaving} className="text-sm px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded font-semibold transition">
+                    {cloudSaving ? '保存中…' : currentProjectId ? '☁️ 保存' : '保存'}
+                  </button>
                 </div>
               </div>
             </div>
