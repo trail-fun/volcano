@@ -202,6 +202,78 @@ export default function OperationPanel() {
     setShowRacePlan(false)
   }
 
+  const viewRacePlan = () => {
+    const startDate = parseStartDateTime(race?.startTime || '')
+    let cumDistKm = 0
+    let cumMins = 0
+    const rows = cpSection.map(ci => {
+      const key = `${ci.fromCoordIdx}-${ci.toCoordIdx}`
+      const mult = parseFloat(draftMults[key] ?? '1') || 1
+      const ctMins = timeToMins(ci.courseTime)
+      const intervalMins = ctMins * mult
+      const breakMins = timeToMins(draftBreaks[key] ?? '')
+      cumDistKm += ci.distKm
+      cumMins += intervalMins + breakMins
+      const passageTime = startDate
+        ? formatDateTime(startDate, Math.round(cumMins))
+        : minsToTime(Math.round(cumMins))
+      return {
+        name: `${ci.fromName} → ${ci.toName}`,
+        courseTime: ci.courseTime,
+        distKm: cumDistKm.toFixed(2),
+        intervalTime: minsToTime(Math.round(intervalMins)),
+        breakTime: breakMins > 0 ? minsToTime(Math.round(breakMins)) : '',
+        passageTime,
+        cumTime: minsToTime(Math.round(cumMins)),
+        mult,
+      }
+    })
+    const startInfo = race?.startTime
+      ? `<p style="font-size:13px;color:#555;margin:0 0 14px">スタート時刻: <strong>${race.startTime}</strong></p>`
+      : ''
+    const trs = rows.map(r => {
+      const ctLabel = r.courseTime ? ` <span style="color:#7c3aed">（CT ${r.courseTime}）</span>` : ''
+      const multLabel = r.mult !== 1.0 ? ` <span style="color:#d97706">×${r.mult}</span>` : ''
+      return `<tr>
+        <td>${r.name}${ctLabel}${multLabel}</td>
+        <td class="num">${r.distKm} km</td>
+        <td class="num" style="color:#7c3aed">${r.intervalTime}</td>
+        <td class="num" style="color:#ea580c">${r.breakTime || '—'}</td>
+        <td class="num fw">${r.passageTime}</td>
+        <td class="num">${r.cumTime}</td>
+      </tr>`
+    }).join('')
+    const html = `<!DOCTYPE html><html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>レースプラン ${race?.name ?? ''}</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:sans-serif;padding:20px;font-size:15px;background:#fff;margin:0}
+  h2{margin:0 0 10px;font-size:20px}
+  table{border-collapse:collapse;width:100%;min-width:520px}
+  th,td{padding:8px 12px;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+  th{background:#f9fafb;font-weight:600;color:#374151;text-align:right}
+  th:first-child{text-align:left}
+  td:first-child{text-align:left;color:#374151}
+  .num{text-align:right;font-family:monospace}
+  .fw{font-weight:600}
+  tr:hover td{background:#f9fafb}
+  @media(max-width:600px){body{padding:12px}th,td{padding:6px 8px;font-size:13px}}
+</style>
+</head><body>
+<h2>📋 レースプラン</h2>
+${startInfo}
+<div style="overflow-x:auto">
+<table><thead><tr>
+  <th style="text-align:left">CT区間</th>
+  <th>累積距離</th><th>区間時間</th><th>休憩時間</th><th>通過時刻</th><th>累積時間</th>
+</tr></thead><tbody>${trs}</tbody></table>
+</div>
+</body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close() }
+  }
+
   // hiddenSections が変わったら mapStore を更新（確認モード起動時は空 Set なのでリセット相当）
   useEffect(() => {
     if (!mainRoute || mainRoute.coords.length < 2) { setHiddenCourseRanges([]); return }
@@ -495,7 +567,7 @@ export default function OperationPanel() {
           onClick={openRacePlan}
           className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold text-sm transition"
         >
-          📋 レースプラン確認
+          📋 レースプラン作成
         </button>
       )}
 
@@ -576,9 +648,12 @@ export default function OperationPanel() {
                   </tbody>
                 </table>
               </div>
-              <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 mt-2 flex-shrink-0">
-                <button onClick={() => setShowRacePlan(false)} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
-                <button onClick={saveRacePlan} className="text-sm px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-semibold transition">保存</button>
+              <div className="flex items-center justify-between pt-2 border-t border-gray-200 mt-2 flex-shrink-0 gap-2 flex-wrap">
+                <button onClick={viewRacePlan} className="text-sm px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded font-semibold transition">📋 レースプラン確認</button>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowRacePlan(false)} className="text-sm px-4 py-1.5 border rounded hover:bg-gray-50">キャンセル</button>
+                  <button onClick={saveRacePlan} className="text-sm px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-semibold transition">保存</button>
+                </div>
               </div>
             </div>
           </div>
