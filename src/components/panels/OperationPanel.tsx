@@ -271,7 +271,7 @@ ${startInfo}
 </div>
 </body></html>`
     const w = window.open('', '_blank')
-    if (w) { w.document.write(html); w.document.close() }
+    if (w) { w.document.write(html); w.document.close(); w.focus() }
   }
 
   // hiddenSections が変わったら mapStore を更新（確認モード起動時は空 Set なのでリセット相当）
