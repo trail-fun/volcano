@@ -17,6 +17,8 @@ export default function StartScreen() {
   const { projects, fetchProjects, loadProject, deleteProject, getShares, addShare, removeShare } = useProjectStore()
   const [showProjects, setShowProjects] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [loadingProject, setLoadingProject] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showAdmin, setShowAdmin] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [showChangePassword, setShowChangePassword] = useState(false)
@@ -63,17 +65,25 @@ export default function StartScreen() {
   }
 
   const handleLoadProject = async (p: ProjectMeta) => {
-    const data = await loadProject(p.id)
-    if (!data) return
-    const d = data as { race?: unknown; routes?: unknown; points?: unknown }
-    useRaceStore.setState({
-      race: (d.race as typeof race) ?? null,
-      routes: (d.routes as typeof routes) ?? [],
-      points: (d.points as typeof points) ?? [],
-    })
-    setViewerOnly(!p.is_owner)
-    setMode('operation')
-    setShowProjects(false)
+    setLoadingProject(p.id)
+    setLoadError(null)
+    try {
+      const data = await loadProject(p.id)
+      if (!data) { setLoadError('読み込みに失敗しました。再度お試しください。'); return }
+      const d = data as { race?: unknown; routes?: unknown; points?: unknown }
+      useRaceStore.setState({
+        race: (d.race as typeof race) ?? null,
+        routes: (d.routes as typeof routes) ?? [],
+        points: (d.points as typeof points) ?? [],
+      })
+      setViewerOnly(!p.is_owner)
+      setMode('operation')
+      setShowProjects(false)
+    } catch (e) {
+      setLoadError(`エラー: ${String(e)}`)
+    } finally {
+      setLoadingProject(null)
+    }
   }
 
   const handleDelete = async (id: string) => {
@@ -118,7 +128,7 @@ export default function StartScreen() {
 
   return (
     <div className="fixed inset-0 bg-gradient-to-b from-green-900 to-green-950 flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-2xl p-10 flex flex-col items-center gap-6 w-full max-w-sm mx-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 flex flex-col items-center gap-5 w-full max-w-sm mx-4 max-h-[92vh] overflow-y-auto">
         <div className="text-center">
           <div className="text-5xl mb-3">🌋</div>
           <h1 className="text-2xl font-bold text-green-900">VOLCANO</h1>
@@ -155,17 +165,23 @@ export default function StartScreen() {
               <span className="text-sm font-semibold text-gray-700">プロジェクト一覧</span>
               <button onClick={() => setShowProjects(false)} className="text-xs text-gray-400 hover:text-gray-600">← 戻る</button>
             </div>
+            {loadError && <p className="text-xs text-red-500 text-center">{loadError}</p>}
             {projects.length === 0
               ? <p className="text-xs text-gray-400 text-center py-4">保存済みプロジェクトがありません</p>
               : projects.map(p => (
-                <div key={p.id} className="flex items-center gap-2 p-2 border rounded-lg hover:bg-gray-50">
+                <div key={p.id} className="flex items-center gap-2 p-3 border rounded-lg active:bg-gray-100" style={{ WebkitTapHighlightColor: 'transparent' }}>
                   <button
+                    type="button"
                     onClick={() => handleLoadProject(p)}
-                    className="flex-1 text-left min-w-0"
+                    disabled={loadingProject === p.id}
+                    className="flex-1 text-left min-w-0 cursor-pointer"
                   >
                     <div className="flex items-center gap-1">
-                      <span className="text-sm text-gray-800 font-medium truncate">{p.name || '無題'}</span>
-                      {!p.is_owner && <span className="text-xs text-indigo-500 flex-shrink-0">共有</span>}
+                      {loadingProject === p.id
+                        ? <span className="text-xs text-gray-400">読み込み中…</span>
+                        : <><span className="text-sm text-gray-800 font-medium truncate">{p.name || '無題'}</span>
+                          {!p.is_owner && <span className="text-xs text-indigo-500 flex-shrink-0">共有</span>}</>
+                      }
                     </div>
                     <div className="text-xs text-gray-400">
                       {new Date(p.updated_at).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -173,16 +189,18 @@ export default function StartScreen() {
                   </button>
                   {p.is_owner && (
                     <button
+                      type="button"
                       onClick={() => openShareDialog(p)}
-                      className="text-xs text-gray-400 hover:text-indigo-500 flex-shrink-0 transition"
+                      className="text-sm text-gray-400 hover:text-indigo-500 flex-shrink-0 transition p-1"
                       title="共有設定"
                     >🔗</button>
                   )}
                   {p.is_owner && (
                     <button
+                      type="button"
                       onClick={() => setDeleteConfirmId(p.id)}
                       disabled={deleting === p.id}
-                      className="text-xs text-gray-300 hover:text-red-400 transition flex-shrink-0 ml-3"
+                      className="text-sm text-gray-300 hover:text-red-400 transition flex-shrink-0 ml-2 p-1"
                     >🗑</button>
                   )}
                 </div>
